@@ -1,5 +1,6 @@
 """
 request_tab.py
+
 ---------------
 RequestTab — виджет одной вкладки запроса: URL, метод, Params/Headers/Body,
 кнопка Send и блок Response. Это то, что "отрывается" в плавающее окно

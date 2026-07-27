@@ -4,6 +4,7 @@ tab_bar.py
 DetachableTabBar / DetachableTabWidget — компоненты, которые умеют
 "отрывать" вкладку в отдельное окно перетаскиванием мышью
 (жест как в браузере: тянешь вкладку за пределы полосы табов).
+
 """
 
 from PyQt5.QtWidgets import QTabBar, QTabWidget
