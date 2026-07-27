@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PyPostman</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app-root" class="d-flex">
+
+  <!-- ==================== SIDEBAR: коллекции ==================== -->
+  <aside id="sidebar">
+    <div class="sidebar-header px-3 pt-3 pb-2">
+      <span class="brand">Py<span class="brand-accent">Postman</span></span>
+    </div>
+    <div class="px-2">
+      <div class="sidebar-section-title">Collections</div>
+      <div id="collections-tree"></div>
+    </div>
+  </aside>
+
+  <!-- ==================== ОСНОВНАЯ ОБЛАСТЬ ==================== -->
+  <main class="flex-grow-1 d-flex flex-column main-area">
+
+    <!-- Полоса вкладок -->
+    <div id="tab-bar" class="d-flex align-items-center">
+      <button id="sidebar-toggle-btn" class="tab-bar-btn" title="Свернуть/развернуть Collections" style="margin-left:0; margin-right:8px;">
+        <i class="bi bi-layout-sidebar"></i>
+      </button>
+      <div id="tabs-container" class="d-flex flex-grow-1"></div>
+      <button id="add-tab-btn" class="tab-bar-btn" title="Новая вкладка (Ctrl+T)">
+        <i class="bi bi-plus-lg"></i>
+      </button>
+      <button id="close-all-btn" class="tab-bar-btn tab-bar-btn-danger" title="Закрыть все вкладки">
+        <i class="bi bi-x-square"></i>
+      </button>
+      <button id="theme-settings-btn" class="tab-bar-btn" title="Настроить тему">
+        <i class="bi bi-palette"></i>
+      </button>
+    </div>
+
+    <!-- Содержимое активной вкладки -->
+    <div id="tab-content" class="flex-grow-1"></div>
+
+  </main>
+</div>
+
+<!-- Кастомное контекстное меню для вкладок -->
+<ul id="tab-context-menu" class="dropdown-menu">
+  <li><button class="dropdown-item" data-action="close">Закрыть вкладку</button></li>
+  <li><button class="dropdown-item" data-action="close-others">Закрыть остальные</button></li>
+  <li><button class="dropdown-item" data-action="close-all">Закрыть все вкладки</button></li>
+  <li><hr class="dropdown-divider"></li>
+  <li><button class="dropdown8-item" data-action="detach">
+    <i class="bi bi-box-arrow-up-right me-1"></i> Открыть в отдельном окне
+  </button></li>
+</ul>
+
+<!-- Шаблон одной вкладки в полосе (клонируется через JS) -->
+<template id="tab-pill-template">
+  <div class="tab-pill" draggable="true">
+    <span class="method-dot"></span>
+    <span class="tab-title"></span>
+    <button class="tab-close-btn" title="Закрыть"><i class="bi bi-x"></i></button>
+  </div>
+</template>
+
+<!-- Шаблон строки key-value для Params/Headers -->
+<template id="kv-row-template">
+  <div class="kv-row d-flex gap-2 mb-2">
+    <input type="text" class="form-control form-control-sm kv-key" placeholder="Key">
+    <input type="text" class="form-control form-control-sm kv-value" placeholder="Value">
+    <button class="btn btn-sm btn-outline-secondary kv-remove" title="Удалить"><i class="bi bi-trash3"></i></button>
+  </div>
+</template>
+
+<!-- Плавающее hove1r-превью (карточки коллекций / вкладки) -->
+<div id="hover-preview" class="hover-preview"></div>
+
+<!-- Модалка настройки темы -->
+<div class="modal fade" id="theme-modal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content theme-modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Настройка темы</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="theme-field">
+          <label>Акцен1тный цвет</label>
+          <input type="color" id="theme-accent" class="form-control form-control-color">
+        </div>
+        <div class="theme-field">
+          <label>Фон приложения</label>
+          <input type="color" id="theme-bg-app" class="form-control form-control-color">
+        </div>
+        <div class="theme-field">
+          <label>Фон панелей</label>
+          <input type="color" id="theme-bg-panel" class="form-control form-control-color">
+        </div>
+        <div class="theme-field">
+          <label>Фон полей ввода</label>
+          <input type="color" id="theme-bg-input" class="form-control form-control-color">
+        </div>
+        <div class="theme-field">
+          <label>Основной текст</label>
+          <input type="color" id="theme-text" class="form-control form-control-color">
+        </div>
+        <div class="theme-field">
+          <label>Скругление углов: <span id="theme-radius-value">8</span>px</label>
+          <input type="range" id="theme-radius" class="form-range" min="0" max="20" step="1">
+        </div>
+        <div class="theme-field">
+          <label>Размер шрифта: <span id="theme-fontsize-value">14</span>px</label>
+          <input type="range" id="theme-fontsize" class="form-range" min="11" max="18" step="1">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" id="theme-reset-btn">Сбросить</button>
+        <button type="button" class="btn send-btn" id="theme-save-btn">Сохранить</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
