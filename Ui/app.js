@@ -143,7 +143,6 @@
       node.addEventListener("dragstart", (e) => {
         e.dataTransfer.effectAllowed = "move";
         e.dataTransfer.setData("text/plain", String(tab.id));
-        // задержка нужна, чтобы браузер успел сделать "снимок" перед сменой класса
         setTimeout(() => node.classList.add("dragging"), 0);
       });
       node.addEventListener("dragend", () => {
@@ -173,8 +172,6 @@
     }
   }
 
-  // после drag-and-drop DOM уже переставлен визуально — синхронизируем массив state.tabs
-  // с фактическим порядком элементов, чтобы он не разъезжался при следующем renderAll()
   function syncTabOrderFromDom() {
     const container = document.getElementById("tabs-container");
     const orderedIds = Array.from(container.children).map((el) => parseInt(el.dataset.tabId, 10));
@@ -245,6 +242,29 @@
       headers: tabState.headers || [],
       body: tabState.body || "",
     });
+    // Показать кнопку "Вернуть в главное окно"
+    const returnBtn = document.getElementById("return-to-main-btn");
+    if (returnBtn) {
+      returnBtn.style.display = "inline-flex";
+    }
+  };
+
+  // Вызывается из Python в дочернем окне, чтобы получить состояние вкладки
+  window.getDetachedTabState = function () {
+    const tab = state.tabs[0]; // в дочернем окне всегда одна вкладка
+    if (!tab) return null;
+    return {
+      method: tab.method,
+      url: tab.url,
+      params: tab.params,
+      headers: tab.headers,
+      body: tab.body,
+    };
+  };
+
+  // Вызывается из Python в главном окне, когда вкладка возвращается
+  window.addReturnedTab = function (tabState) {
+    addTab(tabState);
   };
 
   // ---------------------------------------------------------------------
@@ -477,7 +497,7 @@
   }
 
   // ---------------------------------------------------------------------
-  // Hover-превью: мини-окошко при наведении на вкладку или карточку коллекции
+  // Hover-превью
   // ---------------------------------------------------------------------
   let hoverTimer = null;
 
@@ -502,8 +522,6 @@
     const el = document.getElementById("hover-preview");
     el.innerHTML = html;
     el.style.display = "block";
-
-    // не даём превью вылезти за правый/нижний край окна
     const rect = el.getBoundingClientRect();
     const maxX = window.innerWidth - rect.width - 12;
     const maxY = window.innerHeight - rect.height - 12;
@@ -535,7 +553,7 @@
   }
 
   // ---------------------------------------------------------------------
-  // Тема оформления: применение, сохранение, загрузка (через api.py)
+  // Тема оформления
   // ---------------------------------------------------------------------
   const DEFAULT_THEME = {
     accent: "#6366f1",
@@ -613,7 +631,6 @@
       modal.show();
     });
 
-    // живое применение при перетаскивании ползунков/выборе цвета
     ["theme-accent", "theme-bg-app", "theme-bg-panel", "theme-bg-input", "theme-text"].forEach((id) => {
       document.getElementById(id).addEventListener("input", () => applyTheme(readThemeForm()));
     });
@@ -673,6 +690,16 @@
     document.getElementById("sidebar-toggle-btn").addEventListener("click", () => {
       document.getElementById("app-root").classList.toggle("sidebar-collapsed");
     });
+
+    // Кнопка возврата вкладки из дочернего окна
+    const returnBtn = document.getElementById("return-to-main-btn");
+    if (returnBtn) {
+      returnBtn.addEventListener("click", async () => {
+        if (window.pywebview) {
+          await window.pywebview.api.return_to_parent();
+        }
+      });
+    }
 
     document.addEventListener("keydown", (e) => {
       if (e.ctrlKey && e.key.toLowerCase() === "t") {
