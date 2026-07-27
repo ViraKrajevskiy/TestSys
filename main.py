@@ -17,7 +17,7 @@ import webview
 from api import Api
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-INDEX_HTML = os.path.join(BASE_DIR, "ui", "index.html")
+INDEX_HTML = os.path.join(BASE_DIR, "Ui", "index.html")
 
 
 def main():

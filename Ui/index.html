@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ru" data-bs-theme="dark">
 <head>
   <meta charset="UTF-8">
@@ -10,15 +10,31 @@
 </head>
 <body>
 
-<div id="app-root" class="d-flex">
+<div id="app-root" class="d-flex flex-column">
+
+  <!-- Верхняя панель как в браузере -->
+  <header id="app-navbar" class="d-flex align-items-center">
+    <span class="brand navbar-brand">Py<span class="brand-accent">Postman</span></span>
+    <button id="sidebar-toggle-btn" class="nav-bar-btn" title="Свернуть/развернуть Collections">
+      <i class="bi bi-layout-sidebar"></i>
+    </button>
+    <div class="navbar-spacer flex-grow-1"></div>
+    <button id="return-to-main-btn" class="nav-bar-btn" title="Вернуть вкладку в главное окно" style="display:none;">
+      <i class="bi bi-box-arrow-in-left"></i>
+    </button>
+    <button id="theme-settings-btn" class="nav-bar-btn" title="Настроить тему">
+      <i class="bi bi-palette"></i>
+    </button>
+  </header>
+
+  <div class="app-body d-flex flex-grow-1">
 
   <!-- ==================== SIDEBAR: коллекции ==================== -->
   <aside id="sidebar">
     <div class="sidebar-header px-3 pt-3 pb-2">
-      <span class="brand">Py<span class="brand-accent">Postman</span></span>
+      <div class="sidebar-section-title mb-0">Collections</div>
     </div>
     <div class="px-2">
-      <div class="sidebar-section-title">Collections</div>
       <div id="collections-tree"></div>
     </div>
   </aside>
@@ -28,9 +44,6 @@
 
     <!-- Полоса вкладок -->
     <div id="tab-bar" class="d-flex align-items-center">
-      <button id="sidebar-toggle-btn" class="tab-bar-btn" title="Свернуть/развернуть Collections" style="margin-left:0; margin-right:8px;">
-        <i class="bi bi-layout-sidebar"></i>
-      </button>
       <div id="tabs-container" class="d-flex flex-grow-1"></div>
       <button id="add-tab-btn" class="tab-bar-btn" title="Новая вкладка (Ctrl+T)">
         <i class="bi bi-plus-lg"></i>
@@ -38,19 +51,13 @@
       <button id="close-all-btn" class="tab-bar-btn tab-bar-btn-danger" title="Закрыть все вкладки">
         <i class="bi bi-x-square"></i>
       </button>
-      <!-- Кнопка возврата вкладки в главное окно (только в дочерних окнах) -->
-      <button id="return-to-main-btn" class="tab-bar-btn" title="Вернуть вкладку в главное окно" style="display:none;">
-        <i class="bi bi-box-arrow-in-left"></i>
-      </button>
-      <button id="theme-settings-btn" class="tab-bar-btn" title="Настроить тему">
-        <i class="bi bi-palette"></i>
-      </button>
     </div>
 
     <!-- Содержимое активной вкладки -->
     <div id="tab-content" class="flex-grow-1"></div>
 
   </main>
+  </div>
 </div>
 
 <!-- Кастомное контекстное меню для вкладок -->
@@ -66,9 +73,10 @@
 
 <!-- Шаблон одной вкладки в полосе (клонируется через JS) -->
 <template id="tab-pill-template">
-  <div class="tab-pill" draggable="true">
+  <div class="tab-pill">
     <span class="method-dot"></span>
     <span class="tab-title"></span>
+    <button class="tab-detach-btn" title="Открыть в отдельном окне"><i class="bi bi-box-arrow-up-right"></i></button>
     <button class="tab-close-btn" title="Закрыть"><i class="bi bi-x"></i></button>
   </div>
 </template>
@@ -132,6 +140,18 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="app.js"></script>
+<script src="js/core/state.js"></script>
+<script src="js/core/utils.js"></script>
+<script src="js/core/preview.js"></script>
+<script src="js/features/tabs.js"></script>
+<script src="js/features/request.js"></script>
+<script src="js/features/theme.js"></script>
+<script src="js/features/detached.js"></script>
+<script src="js/features/contextMenu.js"></script>
+<script src="js/components/tabBar.js"></script>
+<script src="js/components/tabContent.js"></script>
+<script src="js/components/collections.js"></script>
+<script src="js/main.js"></script>
 </body>
 </html>
+

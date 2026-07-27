@@ -14,19 +14,22 @@ window.pywebview.api.<method_name>(...), вызовы асинхронные
 """
 
 import json
-import webview
 import os
+import threading
+import webview
 
 from Backend.network import send_http_request
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-INDEX_HTML = os.path.join(BASE_DIR, "ui", "index.html")
+INDEX_HTML = os.path.join(BASE_DIR, "Ui", "index.html")
+MAIN_WINDOW_TITLE = "PyPostman"
 
 
 class Api:
     def __init__(self):
         # Держим ссылки на дочерние окна, чтобы их не убрал сборщик мусора
         self.child_windows = []
+        self._detached_tab_state_json = None
 
     # ---------- HTTP-запросы ----------
     def send_request(self, method, url, headers, params, body):
@@ -34,13 +37,43 @@ class Api:
         return send_http_request(method, url, headers, params, body)
 
     # ---------- Управление откреплёнными вкладками ----------
+    def sync_detached_state(self, state_json):
+        """Кэширует состояние вкладки в дочернем окне (без блокировки UI при закрытии)."""
+        if state_json:
+            self._detached_tab_state_json = state_json
+        return True
+
+    def _find_main_window(self):
+        for w in webview.windows:
+            if w.title == MAIN_WINDOW_TITLE:
+                return w
+        return None
+
+    def _deliver_returned_tab(self, state_json):
+        if not state_json:
+            return
+        main_window = self._find_main_window()
+        if not main_window:
+            return
+        try:
+            main_window.evaluate_js(f"window.addReturnedTab({state_json})")
+        except Exception:
+            pass
+
+    def _schedule_returned_tab(self, state_json):
+        if state_json:
+            threading.Timer(0.05, self._deliver_returned_tab, args=(state_json,)).start()
+
     def open_detached_window(self, tab_state):
         """
         Создаёт новое окно ОС с копией вкладки.
         При закрытии дочернего окна вкладка автоматически возвращается в главное.
         tab_state — dict с полями method, url, params, headers, body.
         """
-        new_api = Api()  # у дочернего окна свой экземпляр Api
+        new_api = Api()
+        state_json = json.dumps(tab_state)
+        new_api._detached_tab_state_json = state_json
+
         win = webview.create_window(
             title="PyPostman — detached",
             url=INDEX_HTML,
@@ -51,24 +84,16 @@ class Api:
         payload = json.dumps(tab_state)
 
         def on_loaded():
-            # Передаём данные вкладки в дочернее окно
             win.evaluate_js(f"window.loadDetachedTab({payload})")
 
         def on_closing():
-            # При закрытии окна возвращаем вкладку в главное окно
+            # Не вызываем evaluate_js здесь — это блокирует закрытие окна.
+            self._schedule_returned_tab(new_api._detached_tab_state_json)
             try:
-                state_json = win.evaluate_js(
-                    "JSON.stringify(window.getDetachedTabState())"
-                )
-                if state_json:
-                    # Ищем главное окно (по заголовку) и передаём вкладку
-                    for w in webview.windows:
-                        if w.title == "PyPostman" and w != win:
-                            w.js_api.receive_returned_tab(state_json)
-                            break
-            except Exception:
-                pass  # окно уже могло быть разрушено
-            return True  # разрешаем закрытие
+                self.child_windows.remove(win)
+            except ValueError:
+                pass
+            return True
 
         win.events.loaded += on_loaded
         win.events.closing += on_closing
@@ -79,13 +104,8 @@ class Api:
         """
         Принимает JSON-строку состояния вкладки из дочернего окна
         и добавляет её обратно в главное окно.
-        Вызывается из дочернего окна через родительский js_api.
         """
-        main_window = webview.active_window()
-        if main_window:
-            main_window.evaluate_js(
-                f"window.addReturnedTab({tab_state_json})"
-            )
+        self._deliver_returned_tab(tab_state_json)
         return True
 
     def return_to_parent(self):
@@ -94,20 +114,14 @@ class Api:
         Забирает состояние вкладки, отправляет в главное окно и закрывает дочернее.
         """
         win = webview.active_window()
+        state_json = self._detached_tab_state_json
+
         try:
-            state_json = win.evaluate_js(
-                "JSON.stringify(window.getDetachedTabState())"
-            )
-            if state_json:
-                for w in webview.windows:
-                    if w.title == "PyPostman" and w != win:
-                        w.js_api.receive_returned_tab(state_json)
-                        # Даём главному окну фокус
-                        w.evaluate_js("window.focus()")
-                        break
+            win.destroy()
         except Exception:
             pass
-        win.destroy()
+
+        self._schedule_returned_tab(state_json)
         return True
 
     # ---------- Настройки темы ----------
