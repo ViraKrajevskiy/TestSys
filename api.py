@@ -22,7 +22,7 @@ from Backend.network import send_http_request
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_HTML = os.path.join(BASE_DIR, "Ui", "index.html")
-MAIN_WINDOW_TITLE = "PyPostman"
+MAIN_WINDOW_TITLE = "TestSys"
 
 
 class Api:
@@ -75,7 +75,7 @@ class Api:
         new_api._detached_tab_state_json = state_json
 
         win = webview.create_window(
-            title="PyPostman — detached",
+            title="TestSys — detached",
             url=INDEX_HTML,
             js_api=new_api,
             width=1000,

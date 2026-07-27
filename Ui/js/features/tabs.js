@@ -1,4 +1,4 @@
-﻿window.App = window.App || {};
+window.App = window.App || {};
 
 (function () {
   const { state } = App;
@@ -12,8 +12,11 @@
       headers: [{ key: "Content-Type", value: "application/json" }],
       body: "",
       activeSubTab: "params",
+      responseViewMode: "body",
       sending: false,
       response: null,
+      crudEntity: null,
+      crudAction: null,
     };
     Object.assign(tab, overrides || {});
     return tab;
@@ -78,6 +81,10 @@
   };
 
   App.tabTitle = function (tab) {
+    if (tab.crudAction) {
+      const labels = { list: "Users", read: "User", create: "Create", update: "Update", delete: "Delete" };
+      if (labels[tab.crudAction]) return labels[tab.crudAction];
+    }
     try {
       const u = new URL(tab.url);
       return u.pathname === "/" ? u.hostname : u.pathname.split("/").filter(Boolean).pop() || u.hostname;

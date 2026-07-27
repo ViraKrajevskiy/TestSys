@@ -7,6 +7,7 @@ App.renderAll = function () {
 
 App.init = function () {
   App.renderCollections();
+  App.initCrud();
   App.initContextMenu();
   App.initThemeSettings();
   App.initTabBarDrag();

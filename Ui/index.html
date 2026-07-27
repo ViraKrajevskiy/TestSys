@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru" data-bs-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PyPostman</title>
+  <title>TestSys</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
@@ -14,7 +14,7 @@
 
   <!-- Верхняя панель как в браузере -->
   <header id="app-navbar" class="d-flex align-items-center">
-    <span class="brand navbar-brand">Py<span class="brand-accent">Postman</span></span>
+    <span class="brand navbar-brand">Test<span class="brand-accent">Sys</span></span>
     <button id="sidebar-toggle-btn" class="nav-bar-btn" title="Свернуть/развернуть Collections">
       <i class="bi bi-layout-sidebar"></i>
     </button>
@@ -139,12 +139,49 @@
   </div>
 </div>
 
+<!-- Модалка Create / Edit сущности -->
+<div class="modal fade" id="entity-modal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content theme-modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="entity-modal-title">Entity</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="entity-form-fields"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn send-btn" id="entity-save-btn">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Модалка подтверждения удаления -->
+<div class="modal fade" id="delete-modal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content theme-modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Confirm Delete</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p id="delete-confirm-text" class="mb-0"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="delete-confirm-btn">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/core/state.js"></script>
 <script src="js/core/utils.js"></script>
 <script src="js/core/preview.js"></script>
 <script src="js/features/tabs.js"></script>
 <script src="js/features/request.js"></script>
+<script src="js/features/crud.js"></script>
 <script src="js/features/theme.js"></script>
 <script src="js/features/detached.js"></script>
 <script src="js/features/contextMenu.js"></script>

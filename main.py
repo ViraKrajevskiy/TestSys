@@ -1,5 +1,5 @@
 """
-main.py — точка входа PyPostman (pywebview + HTML/CSS/Bootstrap версия).
+main.py — точка входа TestSys (pywebview + HTML/CSS/Bootstrap версия).
 
 Запуск:
     pip install -r requirements.txt
@@ -23,7 +23,7 @@ INDEX_HTML = os.path.join(BASE_DIR, "Ui", "index.html")
 def main():
     api = Api()
     webview.create_window(
-        title="PyPostman",
+        title="TestSys",
         url=INDEX_HTML,
         js_api=api,
         width=1300,
