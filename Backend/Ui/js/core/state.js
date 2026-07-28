@@ -46,6 +46,7 @@ App.METHOD_COLOR_VAR = {
   PUT: "--method-put",
   PATCH: "--method-patch",
   DELETE: "--method-delete",
+  USERS: "--method-post", // Use POST color for Users
 };
 
 App.USER_FIELDS = [

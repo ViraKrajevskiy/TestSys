@@ -81,6 +81,9 @@ window.App = window.App || {};
   };
 
   App.tabTitle = function (tab) {
+    if (tab.method === "USERS") {
+      return tab.title || "👥 Users";
+    }
     if (tab.crudAction) {
       const labels = { list: "Users", read: "User", create: "Create", update: "Update", delete: "Delete" };
       if (labels[tab.crudAction]) return labels[tab.crudAction];

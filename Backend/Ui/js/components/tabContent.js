@@ -10,6 +10,12 @@ window.App = window.App || {};
       return;
     }
 
+    // Специальный режим для управления пользователями
+    if (tab.method === "USERS") {
+      root.innerHTML = App.renderUsersPanel(tab);
+      return;
+    }
+
     const sub = (name) => tab.activeSubTab === name ? "active" : "";
     const hasBodyMethod = ["POST", "PUT", "PATCH"].includes(tab.method);
 

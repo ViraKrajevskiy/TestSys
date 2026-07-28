@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 # Параметры подключения к Postgres
 DB_USER = "postgres"
 DB_PASSWORD = "postgres"
-DB_HOST = "localhost"
+DB_HOST = "127.0.0.1"
 DB_PORT = "5432"
 DB_NAME = "testsys_db"
 

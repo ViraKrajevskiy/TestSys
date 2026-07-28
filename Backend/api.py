@@ -18,11 +18,14 @@ import os
 import threading
 import webview
 
-from Backend.network import send_http_request
+from network import send_http_request
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INDEX_HTML = os.path.join(BASE_DIR, "Ui", "index.html")
 MAIN_WINDOW_TITLE = "TestSys"
+
+# Базовый URL testsys_backend API
+API_BASE_URL = "http://127.0.0.1:8000"
 
 
 class Api:
@@ -145,3 +148,88 @@ class Api:
             except Exception:
                 return None
         return None
+
+    # ---------- CRUD для Users (testsys_backend API) ----------
+
+    def get_users(self, skip=0, limit=10):
+        """Получить список всех пользователей."""
+        url = f"{API_BASE_URL}/users"
+        result = send_http_request("GET", url, {}, {"skip": str(skip), "limit": str(limit)}, None)
+        if result["ok"]:
+            try:
+                return json.loads(result["text"])
+            except:
+                return []
+        else:
+            return {"error": result.get("error", "Failed to fetch users")}
+
+    def create_user(self, name, email, phone="", company="", website="", address=""):
+        """Создать нового пользователя."""
+        url = f"{API_BASE_URL}/users"
+        body = json.dumps({
+            "name": name,
+            "email": email,
+            "phone": phone,
+            "company": company,
+            "website": website,
+            "address": address
+        })
+        result = send_http_request("POST", url, {"Content-Type": "application/json"}, {}, body)
+        if result["ok"]:
+            try:
+                return json.loads(result["text"])
+            except:
+                return result
+        else:
+            return {"error": result.get("error", "Failed to create user")}
+
+    def get_user(self, user_id):
+        """Получить пользователя по ID."""
+        url = f"{API_BASE_URL}/users/{user_id}"
+        result = send_http_request("GET", url, {}, {}, None)
+        if result["ok"]:
+            try:
+                return json.loads(result["text"])
+            except:
+                return result
+        else:
+            return {"error": result.get("error", "Failed to fetch user")}
+
+    def update_user(self, user_id, name=None, email=None, phone=None, company=None, website=None, address=None):
+        """Обновить пользователя."""
+        url = f"{API_BASE_URL}/users/{user_id}"
+        update_data = {}
+        if name is not None:
+            update_data["name"] = name
+        if email is not None:
+            update_data["email"] = email
+        if phone is not None:
+            update_data["phone"] = phone
+        if company is not None:
+            update_data["company"] = company
+        if website is not None:
+            update_data["website"] = website
+        if address is not None:
+            update_data["address"] = address
+
+        body = json.dumps(update_data)
+        result = send_http_request("PUT", url, {"Content-Type": "application/json"}, {}, body)
+        if result["ok"]:
+            try:
+                return json.loads(result["text"])
+            except:
+                return result
+        else:
+            return {"error": result.get("error", "Failed to update user")}
+
+    def delete_user(self, user_id):
+        """Удалить пользователя."""
+        url = f"{API_BASE_URL}/users/{user_id}"
+        result = send_http_request("DELETE", url, {}, {}, None)
+        return {"ok": result["ok"], "status": result.get("status_code", 0)}
+
+    def check_api_health(self):
+        """Проверить доступность API."""
+        url = f"{API_BASE_URL}/health"
+        result = send_http_request("GET", url, {}, {}, None)
+        return result["ok"]
