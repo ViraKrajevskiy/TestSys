@@ -128,7 +128,7 @@ class Api:
     def save_theme(self, theme_json):
         """Сохраняет тему в файл theme.json рядом с main.py."""
         try:
-            path = os.path.join(BASE_DIR, "theme.json")
+            path = os.path.join(BASE_DIR, "../theme.json")
             with open(path, "w", encoding="utf-8") as f:
                 f.write(theme_json)
             return True
@@ -137,7 +137,7 @@ class Api:
 
     def load_theme(self):
         """Загружает тему из файла theme.json."""
-        path = os.path.join(BASE_DIR, "theme.json")
+        path = os.path.join(BASE_DIR, "../theme.json")
         if os.path.exists(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
