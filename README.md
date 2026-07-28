@@ -12,6 +12,3 @@
 - 🔍 **Масштабирование** – Ctrl + колесо мыши или пункты меню меняют размер интерфейса.
 - ⚡ **Асинхронные запросы** – интерфейс не зависает при отправке.
 - 💾 **Локальное сохранение темы** – файл `postman_theme.json` с вашими цветами.
-
-<img width="1923" height="1045" alt="image" src="https://github.com/user-attachments/assets/3e888545-c04f-4317-90dd-6d85b384c1b2" />
-<img width="948" height="676" alt="image" src="https://github.com/user-attachments/assets/337df79d-b7cc-4a43-8189-a07750a6cb1c" />
