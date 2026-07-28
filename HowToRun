@@ -1,0 +1,2 @@
+PS D:\FLEET PROJECTS\NewTestSys\testsys_backend> uvicorn main:app --reload --host 127.0.0.1 --port 8000
+PS D:\FLEET PROJECTS\NewTestSys\Backend> python main.py

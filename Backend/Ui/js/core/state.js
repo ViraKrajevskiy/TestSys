@@ -9,7 +9,7 @@ App.state = {
 };
 
 App.VARIABLES = {
-  baseUrl: "https://jsonplaceholder.typicode.com",
+  baseUrl: "http://localhost:8000",
   userId: "1",
 };
 

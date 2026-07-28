@@ -22,6 +22,9 @@
     <button id="return-to-main-btn" class="nav-bar-btn" title="Вернуть вкладку в главное окно" style="display:none;">
       <i class="bi bi-box-arrow-in-left"></i>
     </button>
+    <button id="data-generator-btn" class="nav-bar-btn" title="Генератор тестовых данных">
+      <i class="bi bi-shuffle"></i>
+    </button>
     <button id="users-btn" class="nav-bar-btn" title="Управление пользователями" onclick="App.openUsersTab()">
       <i class="bi bi-people"></i>
     </button>
@@ -178,6 +181,48 @@
   </div>
 </div>
 
+<!-- Модалка генератора данных -->
+<div class="modal fade" id="data-generator-modal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content theme-modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="bi bi-shuffle me-2"></i>Генератор Тестовых Данных
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Уведомления -->
+        <div id="gen-notification"></div>
+
+        <!-- Две колонки: настройки и форма -->
+        <div class="row">
+          <!-- Левая: Настройки генератора -->
+          <div class="col-md-4">
+            <h6 class="mb-3">⚙️ Настройки</h6>
+            <div id="gen-settings"></div>
+            <button class="btn btn-success w-100" id="gen-autofill-btn">
+              <i class="bi bi-magic"></i> Автозаполнить
+            </button>
+          </div>
+
+          <!-- Правая: Поля формы -->
+          <div class="col-md-8">
+            <h6 class="mb-3">📝 Данные</h6>
+            <div id="gen-form-fields"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Закрыть</button>
+        <button type="button" class="btn btn-primary" id="gen-submit-btn">
+          <i class="bi bi-send"></i> Отправить на сервер
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="js/core/state.js"></script>
 <script src="js/core/utils.js"></script>
@@ -189,6 +234,7 @@
 <script src="js/features/detached.js"></script>
 <script src="js/features/contextMenu.js"></script>
 <script src="js/features/users.js"></script>
+<script src="js/features/dataGenerator.js"></script>
 <script src="js/components/tabBar.js"></script>
 <script src="js/components/tabContent.js"></script>
 <script src="js/components/collections.js"></script>
