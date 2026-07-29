@@ -22,7 +22,10 @@
     <button id="return-to-main-btn" class="nav-bar-btn" title="Вернуть вкладку в главное окно" style="display:none;">
       <i class="bi bi-box-arrow-in-left"></i>
     </button>
-    <button id="data-generator-btn" class="nav-bar-btn" title="Генератор тестовых данных">
+    <button id="data-generator-btn" class="nav-bar-btn" title="Генератор тестовых данных" onclick="Generator.showModal()">
+    <button id="randomizer-btn" class="nav-bar-btn" title="Advanced Randomizer (Type 1/2)" onclick="Randomizer.show()">
+      <i class="bi bi-dice-5"></i>
+    </button>
       <i class="bi bi-shuffle"></i>
     </button>
     <button id="users-btn" class="nav-bar-btn" title="Управление пользователями" onclick="App.openUsersTab()">
@@ -238,6 +241,7 @@
 <script src="js/components/tabBar.js"></script>
 <script src="js/components/tabContent.js"></script>
 <script src="js/components/collections.js"></script>
+<script src="js/features/randomizer.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

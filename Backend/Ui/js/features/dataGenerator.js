@@ -243,8 +243,18 @@ const Generator = (() => {
     init,
     generateData,
     applyToTab,
+    showModal,  // Export showModal for button onclick
   };
 })();
 
 // Initialize when DOM ready
-document.addEventListener("DOMContentLoaded", Generator.init);
+document.addEventListener("DOMContentLoaded", () => {
+  console.log("Initializing Generator...");
+  Generator.init().catch(err => console.error("Generator init error:", err));
+});
+
+// Fallback if already loaded
+if (document.readyState !== "loading") {
+  console.log("DOM already loaded, initializing Generator...");
+  Generator.init().catch(err => console.error("Generator init error:", err));
+}

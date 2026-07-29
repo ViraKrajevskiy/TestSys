@@ -144,3 +144,86 @@ def health_check():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+# ========== ADVANCED RANDOMIZERS ==========
+from custom_generator import RandomizerType1, randomizer as randomizer_type2
+
+@app.post("/randomize/type1")
+def randomize_type1(
+    char_type: str = "mixed",
+    length: int = 20,
+    error_probability: float = 0.0,
+):
+    """
+    Type 1 Randomizer: by data type
+    - char_type: 'text', 'numbers', 'symbols', 'mixed', 'alphanumeric'
+    - length: output length
+    - error_probability: 0.0-1.0 (chance to inject error)
+    """
+    return {
+        "value": RandomizerType1.generate(
+            char_type=char_type,
+            length=length,
+            error_probability=error_probability,
+        )
+    }
+
+
+@app.post("/randomize/type2")
+def randomize_type2(
+    list_name: str,
+    count: int = 1,
+    separator: str = "",
+    error_probability: float = 0.0,
+):
+    """
+    Type 2 Randomizer: from custom word lists
+    - list_name: which word list to use
+    - count: number of words to pick
+    - separator: join with (space, comma, etc.)
+    - error_probability: chance to inject error
+    """
+    return {
+        "value": randomizer_type2.generate(
+            list_name=list_name,
+            count=count,
+            separator=separator,
+            error_probability=error_probability,
+        )
+    }
+
+
+@app.get("/randomize/lists")
+def get_word_lists():
+    """Get available word lists"""
+    return {"lists": randomizer_type2.get_list_names()}
+
+
+@app.post("/randomize/lists/add")
+def add_word_list(list_name: str, words: list):
+    """Add new word list"""
+    success = randomizer_type2.add_word_list(list_name, words)
+    return {"success": success, "list_name": list_name}
+
+
+@app.post("/randomize/lists/import")
+def import_word_lists(json_data: str):
+    """Import word lists from JSON"""
+    success = randomizer_type2.load_from_json(json_data)
+    if success:
+        return {"success": True, "lists": randomizer_type2.get_list_names()}
+    return {"success": False, "error": "Invalid JSON"}
+
+
+@app.get("/randomize/lists/export")
+def export_word_lists():
+    """Export all word lists as JSON"""
+    return {"data": randomizer_type2.export_to_json()}
+
+
+@app.delete("/randomize/lists/{list_name}")
+def delete_word_list(list_name: str):
+    """Delete word list"""
+    success = randomizer_type2.delete_list(list_name)
+    return {"success": success}
+
