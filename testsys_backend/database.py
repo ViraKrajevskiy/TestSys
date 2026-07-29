@@ -1,30 +1,26 @@
 """
 database.py
 -----------
-Подключение к PostgreSQL через SQLAlchemy.
-Строка подключения: postgresql://user:password@localhost:5432/testsys_db
+SQLite БД для десктопного приложения.
+Файл БД: testsys.db (в корне проекта или рядом с main.py)
 """
 
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# Параметры подключения к Postgres
-DB_USER = "postgres"
-DB_PASSWORD = "postgres"
-DB_HOST = "127.0.0.1"
-DB_PORT = "5432"
-DB_NAME = "testsys_db"
+# Определяем путь к файлу БД
+# Рекомендуется хранить рядом с main.py
+DB_PATH = os.path.join(os.path.dirname(__file__), "..", "testsys.db")
 
-# URL с явной кодировкой (исправляет UnicodeDecodeError)
-DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+# SQLite URL (три слэша для абсолютного пути)
+DATABASE_URL = f"sqlite:///{DB_PATH}"
 
-# Создаём engine с правильными параметрами
+# Создаём engine для SQLite
 engine = create_engine(
     DATABASE_URL,
-    echo=True,
-    connect_args={
-        "client_encoding": "UTF8",  # Явно задаём кодировку UTF-8
-    }
+    echo=False,  # Поменять на True для отладки
+    connect_args={"check_same_thread": False},  # Нужно для многопоточности
 )
 
 # Сессия

@@ -1,59 +1,35 @@
 ﻿"""
 create_db.py
 -----------
-Скрипт для создания БД testsys_db в PostgreSQL.
-Использует .pgpass файл для аутентификации
+Инициализация SQLite БД (создание таблиц).
+При запуске FastAPI таблицы создаются автоматически, но можно запустить это вручную.
 """
 
-import psycopg2
-from psycopg2 import sql
 import os
+import sys
 
-# Параметры подключения (пароль из .pgpass)
-DB_HOST = "127.0.0.1"
-DB_PORT = "5432"
-DB_USER = "postgres"
+# Добавляем текущую директорию в path для импорта
+sys.path.insert(0, os.path.dirname(__file__))
 
-def create_database():
-    """Создать БД testsys_db если её нет."""
+from database import engine, Base, DB_PATH
+from models import User
+
+def init_sqlite_db():
+    """Создать все таблицы в SQLite БД."""
     try:
-        # Подключаемся БЕЗ явного пароля (берётся из .pgpass)
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            port=DB_PORT,
-            user=DB_USER,
-            database="postgres",
-            client_encoding="UTF8"
-        )
-        conn.autocommit = True
+        print(f"🗄️  Инициализация SQLite: {DB_PATH}")
 
-        cursor = conn.cursor()
+        # Создаём все таблицы на основе моделей
+        Base.metadata.create_all(bind=engine)
 
-        print("✓ Подключение к PostgreSQL установлено")
-
-        # Проверяем есть ли уже БД
-        cursor.execute(
-            sql.SQL("SELECT 1 FROM pg_database WHERE datname = %s"),
-            ["testsys_db"]
-        )
-
-        if cursor.fetchone():
-            print("✓ БД testsys_db уже существует")
-        else:
-            print("Создаю БД testsys_db...")
-            cursor.execute("CREATE DATABASE testsys_db WITH ENCODING 'UTF8'")
-            print("✓ БД testsys_db создана успешно!")
-
-        cursor.close()
-        conn.close()
-        print("\n✅ Всё готово!")
+        print("✓ Все таблицы созданы успешно!")
+        print(f"✓ БД файл: {DB_PATH}")
+        print("\n✅ Готово! Запусти FastAPI:")
+        print("   uvicorn main:app --reload --host 0.0.0.0 --port 8000")
 
     except Exception as e:
-        print(f"❌ Ошибка: {e}")
-        print("\nПроверь:")
-        print("1. PostgreSQL запущен? (Get-Service postgresql*)")
-        print("2. .pgpass файл создан? ($env:APPDATA\\postgresql\\.pgpass)")
-        print("3. На каком порту? (текущий: 5432)")
+        print(f"❌ Ошибка при инициализации БД: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    create_database()
+    init_sqlite_db()
