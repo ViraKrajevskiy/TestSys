@@ -19,6 +19,7 @@ from database import get_db, init_db
 from models import User
 from schemas import UserCreate, UserResponse, UserUpdate
 import crud
+from data_generator import DataGenerator
 
 # ========== Инициализация FastAPI ==========
 app = FastAPI(
@@ -107,6 +108,31 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Пользователь не найден")
     return None
 
+
+
+# ========== DATA GENERATOR (AUTO-FILL) ==========
+@app.post("/generate")
+def generate_test_data():
+    """
+    Generate random test data for User schema.
+    Returns dict with auto-filled fields ready to POST to /users
+    
+    Usage:
+        POST /generate
+        Response: {'name': 'John Smith', 'email': 'john123@gmail.com', ...}
+    """
+    return DataGenerator.generate_for_schema(UserCreate)
+
+
+@app.get("/generate-schema")
+def get_schema_hints():
+    """
+    Get field type hints for User schema.
+    Useful for UI to know which generator to use for each field.
+    
+    Returns: {'name': 'name', 'email': 'email', 'phone': 'phone', ...}
+    """
+    return DataGenerator.get_field_hints(UserCreate)
 
 # ========== Хелс-чек ==========
 @app.get("/health")
