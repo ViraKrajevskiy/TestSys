@@ -1,0 +1,375 @@
+/* Advanced Randomizer v2 Styles */
+
+.randomizer-v2-panel {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 500px;
+  max-height: 80vh;
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
+  display: flex;
+  flex-direction: column;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  z-index: 9999;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(600px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Header */
+.randomizer-v2-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #2d2d2d, #1e1e1e);
+  border-bottom: 1px solid #333;
+  border-radius: 8px 8px 0 0;
+}
+
+.randomizer-v2-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #00ff00;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.randomizer-v2-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.randomizer-btn {
+  background: transparent;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.randomizer-btn:hover {
+  background: #333;
+  color: #fff;
+}
+
+/* Content */
+.randomizer-v2-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+  flex: 1;
+}
+
+/* Tabs */
+.randomizer-v2-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px;
+  background: #2a2a2a;
+  border-bottom: 1px solid #333;
+  overflow-x: auto;
+}
+
+.randomizer-v2-tab {
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #999;
+  cursor: pointer;
+  font-size: 12px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.randomizer-v2-tab:hover {
+  background: #333;
+  color: #fff;
+}
+
+.randomizer-v2-tab.active {
+  background: #00ff00;
+  color: #000;
+  font-weight: 600;
+}
+
+/* Tab Content */
+.randomizer-v2-tab-content {
+  display: none;
+  padding: 12px;
+  overflow-y: auto;
+  flex: 1;
+  max-height: 500px;
+}
+
+.randomizer-v2-tab-content.active {
+  display: block;
+}
+
+/* Generators List */
+.randomizer-v2-generators {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.randomizer-gen-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  background: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.randomizer-gen-item:hover {
+  background: #333;
+  border-color: #00ff00;
+}
+
+.randomizer-gen-item label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: #ccc;
+  font-size: 12px;
+  flex: 1;
+}
+
+.randomizer-gen-item input[type="checkbox"] {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.randomizer-gen-btn {
+  padding: 4px 12px;
+  background: #00ff00;
+  border: none;
+  color: #000;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.randomizer-gen-btn:hover {
+  background: #00dd00;
+  transform: scale(1.05);
+}
+
+/* Batch */
+.randomizer-batch {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #333;
+}
+
+.randomizer-batch-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.randomizer-input {
+  flex: 1;
+  padding: 6px 8px;
+  background: #2a2a2a;
+  border: 1px solid #333;
+  color: #ccc;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.randomizer-input:focus {
+  outline: none;
+  border-color: #00ff00;
+  background: #333;
+}
+
+.randomizer-btn-primary {
+  padding: 6px 12px;
+  background: #00ff00;
+  border: none;
+  color: #000;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.randomizer-btn-primary:hover {
+  background: #00dd00;
+}
+
+.randomizer-output {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 8px;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #0f0;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.randomizer-output code {
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+/* Settings */
+.randomizer-settings {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.randomizer-setting-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.randomizer-setting-item label {
+  font-size: 12px;
+  color: #999;
+  font-weight: 500;
+}
+
+.randomizer-range {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.randomizer-range input {
+  flex: 1;
+}
+
+.randomizer-range span {
+  color: #666;
+}
+
+.randomizer-setting-item small {
+  font-size: 10px;
+  color: #666;
+}
+
+/* Preview */
+.randomizer-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.randomizer-preview h4 {
+  margin: 0;
+  color: #00ff00;
+  font-size: 12px;
+}
+
+.randomizer-output-large {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 12px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #0f0;
+  max-height: 250px;
+  overflow-y: auto;
+  min-height: 100px;
+}
+
+.preview-item {
+  padding: 4px 0;
+  border-bottom: 1px solid #333;
+}
+
+.preview-item:last-child {
+  border-bottom: none;
+}
+
+.preview-item code {
+  background: #2a2a2a;
+  padding: 2px 6px;
+  border-radius: 2px;
+  word-break: break-all;
+}
+
+.randomizer-btn-secondary {
+  padding: 6px 12px;
+  background: #0066ff;
+  border: none;
+  color: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.randomizer-btn-secondary:hover {
+  background: #0055dd;
+}
+
+/* Scrollbar */
+.randomizer-v2-tab-content::-webkit-scrollbar,
+.randomizer-output::-webkit-scrollbar,
+.randomizer-output-large::-webkit-scrollbar {
+  width: 6px;
+}
+
+.randomizer-v2-tab-content::-webkit-scrollbar-track,
+.randomizer-output::-webkit-scrollbar-track,
+.randomizer-output-large::-webkit-scrollbar-track {
+  background: #2a2a2a;
+  border-radius: 3px;
+}
+
+.randomizer-v2-tab-content::-webkit-scrollbar-thumb,
+.randomizer-output::-webkit-scrollbar-thumb,
+.randomizer-output-large::-webkit-scrollbar-thumb {
+  background: #00ff00;
+  border-radius: 3px;
+}
+
+.randomizer-v2-tab-content::-webkit-scrollbar-thumb:hover,
+.randomizer-output::-webkit-scrollbar-thumb:hover,
+.randomizer-output-large::-webkit-scrollbar-thumb:hover {
+  background: #00dd00;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .randomizer-v2-panel {
+    width: calc(100vw - 40px);
+    bottom: 10px;
+    right: 20px;
+    left: 20px;
+  }
+}
