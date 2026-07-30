@@ -22,6 +22,12 @@ App.sendRequest = async function (tabId) {
   const paramsObj = {};
   tab.params.forEach((p) => { if (p.key.trim()) paramsObj[p.key.trim()] = p.value; });
 
+  // Inject User-Agent if set
+  if (tab.userAgent) {
+    headersObj["User-Agent"] = tab.userAgent;
+  }
+
+  const requestStart = Date.now();
   try {
     tab.response = await window.pywebview.api.send_request(
       tab.method, tab.url.trim(), headersObj, paramsObj, tab.body.trim() || null
@@ -33,5 +39,20 @@ App.sendRequest = async function (tabId) {
     tab.response = { ok: false, error: String(err) };
   }
   tab.sending = false;
+
+  // Record metrics
+  if (App.recordMetric) {
+    const resp = tab.response || {};
+    App.recordMetric({
+      method: tab.method,
+      url: tab.url.trim(),
+      status: resp.status_code || 0,
+      elapsed_ms: resp.elapsed_ms || (Date.now() - requestStart),
+      size: resp.text ? resp.text.length : 0,
+      ok: !!resp.ok,
+      timestamp: Date.now(),
+    });
+  }
+
   App.renderTabContent();
 };
