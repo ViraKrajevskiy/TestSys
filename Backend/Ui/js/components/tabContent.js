@@ -28,12 +28,18 @@ window.App = window.App || {};
           ${tab.sending ? '<span class="spinner-border spinner-border-sm"></span>' : "Send"}
         </button>
       </div>
-      <ul class="nav sub-nav mb-3">
+      <ul class="nav sub-nav mb-2">
         <li class="nav-item"><button class="nav-link ${sub("params")}" data-sub="params">Params</button></li>
         <li class="nav-item"><button class="nav-link ${sub("headers")}" data-sub="headers">Headers</button></li>
         ${hasBodyMethod ? '<li class="nav-item"><button class="nav-link ' + sub("body") + '" data-sub="body">Body</button></li>' : ""}
       </ul>
+      <div class="ua-row mb-2" style="display:flex;gap:6px;align-items:center;">
+        <label style="font-size:11px;color:var(--text-dim);white-space:nowrap;flex-shrink:0;">User-Agent:</label>
+        <select class="form-select form-select-sm" id="ua-select" style="flex:1;font-size:11px;max-width:200px;"></select>
+        <input type="text" class="form-control form-control-sm" id="ua-custom" placeholder="Custom UA..." style="flex:2;font-size:11px;display:none;">
+      </div>
       <div id="sub-tab-content"></div>
+      <div class="response-resize-handle" title="Потяните для изменения размера"></div>
       <div class="response-panel">
         <div class="response-panel-header">
           <div id="response-status" class="response-status text-secondary">
@@ -61,6 +67,7 @@ window.App = window.App || {};
     });
 
     const urlInput = document.getElementById("url-input");
+    urlInput.maxLength = App.LIMITS.MAX_URL_LENGTH;
     urlInput.addEventListener("input", (e) => { tab.url = e.target.value; });
     urlInput.addEventListener("change", () => App.renderTabBar());
     urlInput.addEventListener("keydown", (e) => {
@@ -68,6 +75,39 @@ window.App = window.App || {};
     });
 
     document.getElementById("send-btn").addEventListener("click", () => App.sendRequest(tab.id));
+
+    // --- User-Agent select ---
+    const uaSelect = document.getElementById("ua-select");
+    const uaCustom = document.getElementById("ua-custom");
+    App.USER_AGENTS.forEach(ua => {
+      const opt = document.createElement("option");
+      opt.value = ua.value;
+      opt.textContent = ua.label;
+      if (ua.value === (tab.userAgent || "")) opt.selected = true;
+      uaSelect.appendChild(opt);
+    });
+    // Add "Custom..." option
+    const customOpt = document.createElement("option");
+    customOpt.value = "__custom__";
+    customOpt.textContent = "Custom...";
+    if (tab.userAgent && !App.USER_AGENTS.some(u => u.value === tab.userAgent)) {
+      customOpt.selected = true;
+      uaCustom.style.display = "";
+      uaCustom.value = tab.userAgent;
+    }
+    uaSelect.appendChild(customOpt);
+
+    uaSelect.addEventListener("change", (e) => {
+      if (e.target.value === "__custom__") {
+        uaCustom.style.display = "";
+        uaCustom.focus();
+        tab.userAgent = uaCustom.value;
+      } else {
+        uaCustom.style.display = "none";
+        tab.userAgent = e.target.value;
+      }
+    });
+    uaCustom.addEventListener("input", (e) => { tab.userAgent = e.target.value; });
 
     root.querySelectorAll("[data-sub]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -82,6 +122,9 @@ window.App = window.App || {};
 
     App.renderSubTabContent(tab);
     App.renderResponse(tab);
+
+    // Init response panel resize
+    if (App.initResponseResize) App.initResponseResize(root);
   };
 
   App.renderSubTabContent = function (tab) {
@@ -99,7 +142,14 @@ window.App = window.App || {};
         App.escapeHtml(tab.body) +
         "</textarea></div>";
 
-      document.getElementById("body-textarea").addEventListener("input", (e) => { tab.body = e.target.value; });
+      const bodyTextarea = document.getElementById("body-textarea");
+      bodyTextarea.addEventListener("input", (e) => {
+        if (e.target.value.length > App.LIMITS.MAX_BODY_LENGTH) {
+          e.target.value = e.target.value.substring(0, App.LIMITS.MAX_BODY_LENGTH);
+          alert(`Body обрезан: максимум ${(App.LIMITS.MAX_BODY_LENGTH / 1000).toFixed(0)} КБ`);
+        }
+        tab.body = e.target.value;
+      });
 
       const formBtn = document.getElementById("body-form-btn");
       if (formBtn) {
@@ -142,6 +192,11 @@ window.App = window.App || {};
     });
 
     container.querySelector("#add-kv-row").addEventListener("click", () => {
+      const limit = listKey === "params" ? App.LIMITS.MAX_PARAMS : App.LIMITS.MAX_HEADERS;
+      if (rows.length >= limit) {
+        alert(`Максимум ${limit} ${listKey}!`);
+        return;
+      }
       rows.push({ key: "", value: "" });
       App.renderSubTabContent(tab);
     });
@@ -206,7 +261,13 @@ window.App = window.App || {};
     } else {
       const pre = document.createElement("pre");
       pre.className = "response-pre";
-      pre.textContent = App.formatJson(tab.response.text);
+      let responseText = tab.response.text || "";
+      if (responseText.length > App.LIMITS.MAX_RESPONSE_DISPLAY) {
+        responseText = responseText.substring(0, App.LIMITS.MAX_RESPONSE_DISPLAY);
+        pre.textContent = App.formatJson(responseText) + "\n\n... [обрезано: ответ больше " + (App.LIMITS.MAX_RESPONSE_DISPLAY / 1000000).toFixed(0) + " МБ]";
+      } else {
+        pre.textContent = App.formatJson(responseText);
+      }
       bodyEl.appendChild(pre);
     }
   };

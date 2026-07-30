@@ -31,7 +31,8 @@ const Randomizer = (() => {
     log("🚀 Randomizer initializing...");
     createPanel();
     setupEventListeners();
-    await loadWordLists();
+    // Load word lists in background — don't block init
+    loadWordLists().catch(() => {});
     log("✅ Randomizer ready!");
   }
 
@@ -47,42 +48,43 @@ const Randomizer = (() => {
       right: 20px;
       width: 500px;
       max-height: 70vh;
-      background: #1a1a1a;
-      border: 2px solid #495057;
-      border-radius: 12px;
+      background: var(--bg-panel);
+      border: 2px solid var(--border-color);
+      border-radius: var(--radius);
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
       display: none;
       flex-direction: column;
       z-index: 9999;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: inherit;
+      color: var(--text-main);
     `;
 
     panel.innerHTML = `
       <div style="
         padding: 12px 16px;
-        border-bottom: 1px solid #495057;
+        border-bottom: 1px solid var(--border-color);
         display: flex;
         justify-content: space-between;
         align-items: center;
-        background: #212529;
-        border-radius: 10px 10px 0 0;
+        background: var(--bg-input);
+        border-radius: var(--radius) var(--radius) 0 0;
         user-select: none;
         cursor: move;
       " id="randomizer-header">
-        <div style="display: flex; align-items: center; gap: 8px; font-weight: bold; color: #fff;">
+        <div style="display: flex; align-items: center; gap: 8px; font-weight: bold; color: var(--text-main);">
           <span style="font-size: 18px;">🎲</span>
           <span>Advanced Randomizer</span>
         </div>
         <div style="display: flex; gap: 6px;">
           <button id="randomizer-minimize" style="
-            background: none; border: none; color: #adb5bd; cursor: pointer;
+            background: none; border: none; color: var(--text-dim); cursor: pointer;
             font-size: 18px; padding: 4px; display: flex; align-items: center;
             transition: color 0.2s;
           " title="Minimize">
             <span>−</span>
           </button>
           <button id="randomizer-close" style="
-            background: none; border: none; color: #adb5bd; cursor: pointer;
+            background: none; border: none; color: var(--text-dim); cursor: pointer;
             font-size: 18px; padding: 4px; display: flex; align-items: center;
             transition: color 0.2s;
           " title="Close">
@@ -97,27 +99,27 @@ const Randomizer = (() => {
         <!-- Mode Tabs -->
         <div style="
           display: flex;
-          border-bottom: 1px solid #495057;
-          background: #212529;
+          border-bottom: 1px solid var(--border-color);
+          background: var(--bg-input);
           flex-shrink: 0;
         ">
           <button id="tab-type1" style="
             flex: 1;
-            background: #495057;
-            color: #fff;
+            background: var(--bg-panel);
+            color: var(--text-main);
             border: none;
             padding: 10px 12px;
             cursor: pointer;
             font-size: 13px;
-            border-bottom: 3px solid #0d6;
+            border-bottom: 3px solid var(--accent);
             transition: background 0.2s;
           ">
             <i style="font-style: italic;">▭</i> Type 1: Data Type
           </button>
           <button id="tab-type2" style="
             flex: 1;
-            background: #343a40;
-            color: #adb5bd;
+            background: var(--bg-input);
+            color: var(--text-dim);
             border: none;
             padding: 10px 12px;
             cursor: pointer;
@@ -132,15 +134,15 @@ const Randomizer = (() => {
           <!-- TYPE 1 -->
           <div id="content-type1">
             <div style="margin-bottom: 10px;">
-              <label style="display: block; font-size: 12px; color: #0d6; margin-bottom: 4px; font-weight: 500;">
+              <label style="display: block; font-size: 12px; color: var(--accent); margin-bottom: 4px; font-weight: 500;">
                 Character Type
               </label>
               <select id="rand-char-type" style="
                 width: 100%;
                 padding: 6px 8px;
-                background: #444;
-                color: #fff;
-                border: 1px solid #666;
+                background: var(--bg-input);
+                color: var(--text-main);
+                border: 1px solid var(--border-color);
                 border-radius: 4px;
                 font-size: 12px;
               ">
@@ -153,30 +155,30 @@ const Randomizer = (() => {
             </div>
 
             <div style="margin-bottom: 10px;">
-              <label style="display: block; font-size: 12px; color: #0d6; margin-bottom: 4px; font-weight: 500;">
+              <label style="display: block; font-size: 12px; color: var(--accent); margin-bottom: 4px; font-weight: 500;">
                 Length
               </label>
               <input type="number" id="rand-length" value="20" min="1" max="500" style="
                 width: 100%;
                 padding: 6px 8px;
-                background: #444;
-                color: #fff;
-                border: 1px solid #666;
+                background: var(--bg-input);
+                color: var(--text-main);
+                border: 1px solid var(--border-color);
                 border-radius: 4px;
                 font-size: 12px;
               ">
             </div>
 
             <div style="margin-bottom: 10px;">
-              <label style="display: block; font-size: 12px; color: #0d6; margin-bottom: 4px; font-weight: 500;">
+              <label style="display: block; font-size: 12px; color: var(--accent); margin-bottom: 4px; font-weight: 500;">
                 Error Probability (0-1)
               </label>
               <input type="number" id="rand-error-prob" value="0" min="0" max="1" step="0.1" style="
                 width: 100%;
                 padding: 6px 8px;
-                background: #444;
-                color: #fff;
-                border: 1px solid #666;
+                background: var(--bg-input);
+                color: var(--text-main);
+                border: 1px solid var(--border-color);
                 border-radius: 4px;
                 font-size: 12px;
               ">
@@ -186,15 +188,15 @@ const Randomizer = (() => {
           <!-- TYPE 2 -->
           <div id="content-type2" style="display: none;">
             <div style="margin-bottom: 10px;">
-              <label style="display: block; font-size: 12px; color: #0d6; margin-bottom: 4px; font-weight: 500;">
+              <label style="display: block; font-size: 12px; color: var(--accent); margin-bottom: 4px; font-weight: 500;">
                 Word List
               </label>
               <select id="rand-list-name" style="
                 width: 100%;
                 padding: 6px 8px;
-                background: #444;
-                color: #fff;
-                border: 1px solid #666;
+                background: var(--bg-input);
+                color: var(--text-main);
+                border: 1px solid var(--border-color);
                 border-radius: 4px;
                 font-size: 12px;
               ">
@@ -204,29 +206,29 @@ const Randomizer = (() => {
 
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
               <div>
-                <label style="display: block; font-size: 12px; color: #0d6; margin-bottom: 4px; font-weight: 500;">
+                <label style="display: block; font-size: 12px; color: var(--accent); margin-bottom: 4px; font-weight: 500;">
                   Count
                 </label>
                 <input type="number" id="rand-count" value="1" min="1" max="10" style="
                   width: 100%;
                   padding: 6px 8px;
-                  background: #444;
-                  color: #fff;
-                  border: 1px solid #666;
+                  background: var(--bg-input);
+                  color: var(--text-main);
+                  border: 1px solid var(--border-color);
                   border-radius: 4px;
                   font-size: 12px;
                 ">
               </div>
               <div>
-                <label style="display: block; font-size: 12px; color: #0d6; margin-bottom: 4px; font-weight: 500;">
+                <label style="display: block; font-size: 12px; color: var(--accent); margin-bottom: 4px; font-weight: 500;">
                   Separator
                 </label>
                 <input type="text" id="rand-separator" placeholder="space, comma" style="
                   width: 100%;
                   padding: 6px 8px;
-                  background: #444;
-                  color: #fff;
-                  border: 1px solid #666;
+                  background: var(--bg-input);
+                  color: var(--text-main);
+                  border: 1px solid var(--border-color);
                   border-radius: 4px;
                   font-size: 12px;
                 ">
@@ -234,15 +236,15 @@ const Randomizer = (() => {
             </div>
 
             <div style="margin-bottom: 10px;">
-              <label style="display: block; font-size: 12px; color: #0d6; margin-bottom: 4px; font-weight: 500;">
+              <label style="display: block; font-size: 12px; color: var(--accent); margin-bottom: 4px; font-weight: 500;">
                 Error Probability (0-1)
               </label>
               <input type="number" id="rand-error-prob-t2" value="0" min="0" max="1" step="0.1" style="
                 width: 100%;
                 padding: 6px 8px;
-                background: #444;
-                color: #fff;
-                border: 1px solid #666;
+                background: var(--bg-input);
+                color: var(--text-main);
+                border: 1px solid var(--border-color);
                 border-radius: 4px;
                 font-size: 12px;
               ">
@@ -253,29 +255,29 @@ const Randomizer = (() => {
         <!-- Output -->
         <div style="
           padding: 12px;
-          border-top: 1px solid #495057;
-          background: #212529;
+          border-top: 1px solid var(--border-color);
+          background: var(--bg-input);
           flex-shrink: 0;
         ">
-          <label style="display: block; font-size: 12px; color: #0d6; margin-bottom: 6px; font-weight: 500;">
+          <label style="display: block; font-size: 12px; color: var(--accent); margin-bottom: 6px; font-weight: 500;">
             📊 Generated Value
           </label>
           <div style="display: flex; gap: 6px;">
             <input type="text" id="rand-output" placeholder="Click Generate..." readonly style="
               flex: 1;
               padding: 8px 10px;
-              background: #333;
-              color: #0d6;
-              border: 1px solid #0d6;
+              background: var(--bg-app);
+              color: var(--accent);
+              border: 1px solid var(--accent);
               border-radius: 4px;
               font-family: 'Courier New', monospace;
               font-size: 12px;
             ">
             <button id="rand-copy-btn" style="
               padding: 8px 12px;
-              background: #495057;
-              color: #0d6;
-              border: 1px solid #0d6;
+              background: var(--bg-input);
+              color: var(--accent);
+              border: 1px solid var(--accent);
               border-radius: 4px;
               cursor: pointer;
               font-weight: bold;
@@ -283,16 +285,29 @@ const Randomizer = (() => {
             " title="Copy to clipboard">
               📋
             </button>
+            <button id="rand-insert-btn" style="
+              padding: 8px 12px;
+              background: var(--accent);
+              color: #fff;
+              border: none;
+              border-radius: 4px;
+              cursor: pointer;
+              font-weight: bold;
+              font-size: 12px;
+              transition: background 0.2s;
+            " title="Insert into active tab body">
+              ⬇ Insert
+            </button>
           </div>
         </div>
 
         <!-- Generate Button -->
-        <div style="padding: 12px; background: #212529; flex-shrink: 0; border-top: 1px solid #495057;">
+        <div style="padding: 12px; background: var(--bg-input); flex-shrink: 0; border-top: 1px solid var(--border-color);">
           <button id="rand-generate-btn" style="
             width: 100%;
             padding: 10px;
-            background: linear-gradient(135deg, #0d6 0%, #0a4 100%);
-            color: #000;
+            background: var(--accent);
+            color: #fff;
             border: none;
             border-radius: 6px;
             cursor: pointer;
@@ -349,6 +364,7 @@ const Randomizer = (() => {
     document.getElementById("randomizer-btn")?.addEventListener("click", toggle);
     document.getElementById("rand-generate-btn")?.addEventListener("click", generateValue);
     document.getElementById("rand-copy-btn")?.addEventListener("click", copyToClipboard);
+    document.getElementById("rand-insert-btn")?.addEventListener("click", insertIntoBody);
     document.getElementById("randomizer-close")?.addEventListener("click", hide);
     document.getElementById("randomizer-minimize")?.addEventListener("click", toggleMinimize);
 
@@ -389,27 +405,28 @@ const Randomizer = (() => {
     currentMode = 'type1';
     document.getElementById("content-type1").style.display = "block";
     document.getElementById("content-type2").style.display = "none";
-    document.getElementById("tab-type1").style.background = "#495057";
-    document.getElementById("tab-type1").style.color = "#fff";
-    document.getElementById("tab-type1").style.borderBottomColor = "#0d6";
-    document.getElementById("tab-type2").style.background = "#343a40";
-    document.getElementById("tab-type2").style.color = "#adb5bd";
-    document.getElementById("tab-type2").style.borderBottomColor = "#343a40";
+    const t1 = document.getElementById("tab-type1");
+    const t2 = document.getElementById("tab-type2");
+    t1.style.background = "var(--bg-panel)";
+    t1.style.color = "var(--text-main)";
+    t1.style.borderBottomColor = "var(--accent)";
+    t2.style.background = "var(--bg-input)";
+    t2.style.color = "var(--text-dim)";
+    t2.style.borderBottomColor = "var(--bg-input)";
   }
 
-  /**
-   * Switch to Type 2 tab
-   */
   function switchToType2() {
     currentMode = 'type2';
     document.getElementById("content-type1").style.display = "none";
     document.getElementById("content-type2").style.display = "block";
-    document.getElementById("tab-type1").style.background = "#343a40";
-    document.getElementById("tab-type1").style.color = "#adb5bd";
-    document.getElementById("tab-type1").style.borderBottomColor = "#343a40";
-    document.getElementById("tab-type2").style.background = "#495057";
-    document.getElementById("tab-type2").style.color = "#fff";
-    document.getElementById("tab-type2").style.borderBottomColor = "#0d6";
+    const t1 = document.getElementById("tab-type1");
+    const t2 = document.getElementById("tab-type2");
+    t1.style.background = "var(--bg-input)";
+    t1.style.color = "var(--text-dim)";
+    t1.style.borderBottomColor = "var(--bg-input)";
+    t2.style.background = "var(--bg-panel)";
+    t2.style.color = "var(--text-main)";
+    t2.style.borderBottomColor = "var(--accent)";
   }
 
   /**
@@ -417,7 +434,10 @@ const Randomizer = (() => {
    */
   async function loadWordLists() {
     try {
-      const response = await fetch(`${API_BASE}/randomize/lists`);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3000);
+      const response = await fetch(`${API_BASE}/randomize/lists`, { signal: controller.signal });
+      clearTimeout(timer);
       const data = await response.json();
       wordLists = data.lists || [];
 
@@ -471,9 +491,13 @@ const Randomizer = (() => {
         });
       }
 
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
       const response = await fetch(`${API_BASE}${endpoint}?${params}`, {
-        method: 'POST'
+        method: 'POST',
+        signal: controller.signal,
       });
+      clearTimeout(timer);
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -504,6 +528,60 @@ const Randomizer = (() => {
   }
 
   /**
+   * Insert generated value into active tab's body textarea.
+   * Auto-switches method to POST and sub-tab to Body if needed.
+   */
+  function insertIntoBody() {
+    const output = document.getElementById("rand-output");
+    if (!output || !output.value) {
+      showNotification("Сначала сгенерируй значение!", "warning");
+      return;
+    }
+    _insertTextIntoBody(output.value);
+  }
+
+  /**
+   * Shared helper: ensure active tab has a body textarea visible, then insert text.
+   */
+  function _insertTextIntoBody(text) {
+    const tab = App.getActiveTab();
+    if (!tab) {
+      showNotification("Нет активной вкладки!", "warning");
+      return;
+    }
+
+    // If method doesn't support body — switch to POST
+    const needsRerender = !["POST", "PUT", "PATCH"].includes(tab.method) || tab.activeSubTab !== "body";
+    if (!["POST", "PUT", "PATCH"].includes(tab.method)) {
+      tab.method = "POST";
+    }
+    tab.activeSubTab = "body";
+
+    if (needsRerender) {
+      // Re-render so body-textarea appears
+      App.renderTabContent();
+    }
+
+    const textarea = document.getElementById("body-textarea");
+    if (textarea) {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const before = textarea.value.substring(0, start);
+      const after = textarea.value.substring(end);
+      textarea.value = before + text + after;
+      tab.body = textarea.value;
+      const newPos = start + text.length;
+      textarea.setSelectionRange(newPos, newPos);
+      textarea.focus();
+    } else {
+      tab.body = (tab.body || "") + text;
+    }
+
+    showNotification("✅ Вставлено!", "success");
+    log("⬇ Inserted into body");
+  }
+
+  /**
    * Show notification
    */
   function showNotification(message, type = 'info') {
@@ -513,8 +591,9 @@ const Randomizer = (() => {
     const alert = document.createElement("div");
     alert.style.cssText = `
       padding: 8px 10px;
-      background: ${type === 'success' ? '#2d5016' : type === 'danger' ? '#5a1c1c' : '#1a3a4a'};
-      color: ${type === 'success' ? '#90ee90' : type === 'danger' ? '#ff6b6b' : '#87ceeb'};
+      background: var(--bg-input);
+      color: var(--text-main);
+      border-left: 3px solid var(--accent);
       border-radius: 4px;
       font-size: 12px;
       margin-bottom: 6px;

@@ -9,9 +9,14 @@ App.init = function () {
   App.renderCollections();
   App.initCrud();
   App.initContextMenu();
+  App.initMetrics();
+  App.initSettingsModal();
   App.initThemeSettings();
   App.initTabBarDrag();
-  App.loadAndApplySavedTheme();
+  App.initResizable();          // ресайз панелей
+  App.loadSettings();           // загрузить настройки (лимиты, URL, логи)
+  App.loadCollections().then(() => App.renderCollections()); // загрузить коллекции
+  App.loadAndApplySavedTheme(); // загрузить тему
 
   document.getElementById("add-tab-btn").addEventListener("click", () => App.addTab());
   document.getElementById("close-all-btn").addEventListener("click", () => App.closeAllTabs());
@@ -57,3 +62,17 @@ App.init = function () {
 };
 
 document.addEventListener("DOMContentLoaded", App.init);
+
+// Глобальная страховка: при закрытии ЛЮБОЙ модалки убираем застрявшие backdrop-ы
+document.addEventListener("hidden.bs.modal", () => {
+  // Если нет открытых модалок, но backdrop остался — убираем
+  setTimeout(() => {
+    const openModals = document.querySelectorAll(".modal.show");
+    if (openModals.length === 0) {
+      document.querySelectorAll(".modal-backdrop").forEach((el) => el.remove());
+      document.body.classList.remove("modal-open");
+      document.body.style.removeProperty("overflow");
+      document.body.style.removeProperty("padding-right");
+    }
+  }, 100);
+});

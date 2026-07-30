@@ -5,6 +5,7 @@ api.py — UPDATED
 
 import json
 import os
+import sys
 import threading
 import webview
 import logging
@@ -15,7 +16,19 @@ import re
 
 from network import send_http_request
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+IS_FROZEN = getattr(sys, "frozen", False)
+
+if IS_FROZEN:
+    BASE_DIR = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Папка для пользовательских файлов (log, theme) — рядом с exe / корень проекта
+USER_DATA_DIR = os.environ.get(
+    "TESTSYS_USER_DATA_DIR",
+    os.path.dirname(sys.executable) if IS_FROZEN else os.path.dirname(BASE_DIR),
+)
+
 INDEX_HTML = os.path.join(BASE_DIR, "Ui", "index.html")
 MAIN_WINDOW_TITLE = "TestSys"
 API_BASE_URL = "http://127.0.0.1:8000"
@@ -24,7 +37,7 @@ API_BASE_URL = "http://127.0.0.1:8000"
 # LOGGING SETUP
 # ============================================================
 
-LOG_FILE = os.path.join(BASE_DIR, "../testsys.log")
+LOG_FILE = os.path.join(USER_DATA_DIR, "testsys.log")
 
 # Create logger
 logger = logging.getLogger("TestSys")
@@ -355,11 +368,59 @@ class Api:
         self._schedule_returned_tab(state_json)
         return True
 
+    # ========== SETTINGS ==========
+    def save_settings(self, settings_json):
+        """Сохраняет настройки в settings.json."""
+        try:
+            path = os.path.join(USER_DATA_DIR, "settings.json")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(settings_json)
+            logger.info("Settings saved")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save settings: {e}")
+            return False
+
+    def load_settings(self):
+        """Загружает настройки из settings.json."""
+        path = os.path.join(USER_DATA_DIR, "settings.json")
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return f.read()
+            except Exception:
+                return None
+        return None
+
+    # ========== COLLECTIONS ==========
+    def save_collections(self, collections_json):
+        """Сохраняет пользовательские коллекции."""
+        try:
+            path = os.path.join(USER_DATA_DIR, "collections.json")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(collections_json)
+            logger.info("Collections saved")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save collections: {e}")
+            return False
+
+    def load_collections(self):
+        """Загружает коллекции из collections.json."""
+        path = os.path.join(USER_DATA_DIR, "collections.json")
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return f.read()
+            except Exception:
+                return None
+        return None
+
     # ========== THEME (existing) ==========
     def save_theme(self, theme_json):
-        """Сохраняет тему в файл theme.json рядом с main.py."""
+        """Сохраняет тему в файл theme.json рядом с main.py / exe."""
         try:
-            path = os.path.join(BASE_DIR, "../theme.json")
+            path = os.path.join(USER_DATA_DIR, "theme.json")
             with open(path, "w", encoding="utf-8") as f:
                 f.write(theme_json)
             logger.info("Theme saved")
@@ -370,7 +431,7 @@ class Api:
 
     def load_theme(self):
         """Загружает тему из файла theme.json."""
-        path = os.path.join(BASE_DIR, "../theme.json")
+        path = os.path.join(USER_DATA_DIR, "theme.json")
         if os.path.exists(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:

@@ -150,6 +150,12 @@
     const template = document.getElementById("tab-pill-template");
     container.innerHTML = "";
 
+    // Update add-tab button title with count
+    const addBtn = document.getElementById("add-tab-btn");
+    if (addBtn) {
+      addBtn.title = `Новая вкладка (${App.state.tabs.length}/${App.LIMITS.MAX_TABS})`;
+    }
+
     App.state.tabs.forEach((tab) => {
       const node = template.content.firstElementChild.cloneNode(true);
       node.dataset.tabId = tab.id;

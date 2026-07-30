@@ -26,7 +26,7 @@
     <button id="data-generator-btn" class="nav-bar-btn" title="Генератор тестовых данных" onclick="Generator.showModal()">
       <i class="bi bi-shuffle"></i>
     </button>
-    <button id="randomizer-btn" class="nav-bar-btn" title="Advanced Randomizer (Type 1/2)" onclick="Randomizer.show()">
+    <button id="randomizer-btn" class="nav-bar-btn" title="Randomizer" onclick="UnifiedRandomizer.toggle()">
       <i class="bi bi-dice-5"></i>
     </button>
     <button id="users-btn" class="nav-bar-btn" title="Управление пользователями" onclick="App.openUsersTab()">
@@ -34,6 +34,12 @@
     </button>
     <button id="theme-settings-btn" class="nav-bar-btn" title="Настроить тему">
       <i class="bi bi-palette"></i>
+    </button>
+    <button id="metrics-btn" class="nav-bar-btn" title="Метрики запросов">
+      <i class="bi bi-graph-up"></i>
+    </button>
+    <button id="settings-btn" class="nav-bar-btn" title="Настройки проекта">
+      <i class="bi bi-gear"></i>
     </button>
   </header>
 
@@ -47,6 +53,7 @@
     <div class="px-2">
       <div id="collections-tree"></div>
     </div>
+    <div id="sidebar-resize-handle"></div>
   </aside>
 
   <!-- ==================== ОСНОВНАЯ ОБЛАСТЬ ==================== -->
@@ -112,6 +119,17 @@
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
+        <!-- Preset buttons -->
+        <div class="mb-3">
+          <label class="form-label" style="font-size:0.78rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.05em;">Готовые темы</label>
+          <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-sm btn-outline-secondary" data-theme-preset="dark">Dark</button>
+            <button class="btn btn-sm btn-outline-secondary" data-theme-preset="light">Light</button>
+            <button class="btn btn-sm btn-outline-secondary" data-theme-preset="midnight">Midnight</button>
+            <button class="btn btn-sm btn-outline-secondary" data-theme-preset="green">Matrix</button>
+          </div>
+        </div>
+        <hr style="border-color:var(--border-color);">
         <div class="theme-field">
           <label>Акцентный цвет</label>
           <input type="color" id="theme-accent" class="form-control form-control-color">
@@ -131,6 +149,14 @@
         <div class="theme-field">
           <label>Основной текст</label>
           <input type="color" id="theme-text" class="form-control form-control-color">
+        </div>
+        <div class="theme-field">
+          <label>Приглушённый текст</label>
+          <input type="color" id="theme-text-dim" class="form-control form-control-color">
+        </div>
+        <div class="theme-field">
+          <label>Границы</label>
+          <input type="color" id="theme-border" class="form-control form-control-color">
         </div>
         <div class="theme-field">
           <label>Скругление углов: <span id="theme-radius-value">8</span>px</label>
@@ -234,6 +260,9 @@
 <script src="js/features/tabs.js"></script>
 <script src="js/features/request.js"></script>
 <script src="js/features/crud.js"></script>
+<script src="js/features/metrics.js"></script>
+<script src="js/features/settings.js"></script>
+<script src="js/features/resize.js"></script>
 <script src="js/features/theme.js"></script>
 <script src="js/features/detached.js"></script>
 <script src="js/features/contextMenu.js"></script>
@@ -242,8 +271,7 @@
 <script src="js/components/tabBar.js"></script>
 <script src="js/components/tabContent.js"></script>
 <script src="js/components/collections.js"></script>
-<script src="js/features/randomizer.js"></script>
+<script src="js/features/randomizer-unified.js"></script>
 <script src="js/main.js"></script>
-<script src="js/features/randomizer-v2.js"></script>
 </body>
 </html>

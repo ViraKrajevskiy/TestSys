@@ -1,300 +1,284 @@
 /**
- * Advanced Randomizer v2
- * 10 типов генерации с переключателями, загрузкой файлов и предпросмотром
- * Встроен в основной интерфейс (не отдельное окно)
+ * Advanced Randomizer v2 — Template-Based
+ *
+ * Система:
+ * 1. Берёт текущий Body (JSON) из активной вкладки ИЛИ вставляет пример
+ * 2. Показывает все поля с галочками — что рандомизировать
+ * 3. Для каждого поля можно выбрать тип генерации (auto / text / email / из списка / etc.)
+ * 4. Кнопка "Generate" — заменяет ТОЛЬКО отмеченные поля, остальные не трогает
+ * 5. Результат вставляется обратно в Body как валидный JSON
  */
 
 const RandomizerV2 = (() => {
-  let settings = {
-    textLength: 10,
-    numberRange: [1, 1000],
-    symbolsLength: 5,
-    paddingSpaces: 2,
-    elementCount: 5,
-  };
+  let templateObj = {};     // Parsed template JSON
+  let fieldConfigs = [];    // [{path, key, originalValue, checked, genType, customList}]
+  let lastGenerated = null; // Last generated JSON string
 
-  let customData = {
-    texts: [],
-    numbers: [],
-    symbols: [],
-    custom: []
-  };
-
-  const GENERATORS = {
-    // 1. Рандомный текст
-    randomText: () => {
-      const chars = 'abcdefghijklmnopqrstuvwxyz';
-      let result = '';
-      for (let i = 0; i < settings.textLength; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
+  // ============================================================
+  // EXAMPLE TEMPLATES — показываем пользователю как должен выглядеть JSON
+  // ============================================================
+  const EXAMPLES = {
+    user: {
+      label: "👤 User",
+      data: {
+        name: "John Doe",
+        username: "johnd",
+        email: "john@example.com",
+        phone: "1-234-567-8900",
+        website: "johndoe.com",
+        company: {
+          name: "Acme Corp",
+          catchPhrase: "Multi-layered solution"
+        }
       }
-      return result;
     },
-
-    // 2. Рандомный знак пунктуации
-    randomPunctuation: () => {
-      const symbols = '!?,;:."\'-()[]{}';
-      return symbols.charAt(Math.floor(Math.random() * symbols.length));
-    },
-
-    // 3. Рандомный отступ
-    randomPadding: () => {
-      return ' '.repeat(Math.floor(Math.random() * settings.paddingSpaces) + 1);
-    },
-
-    // 4. Рандомное число
-    randomNumber: () => {
-      const [min, max] = settings.numberRange;
-      return Math.floor(Math.random() * (max - min + 1)) + min;
-    },
-
-    // 5. Текст + число
-    textWithNumber: () => {
-      return `${GENERATORS.randomText()}${GENERATORS.randomNumber()}`;
-    },
-
-    // 6. Текст + пунктуация
-    textWithPunctuation: () => {
-      return `${GENERATORS.randomText()}${GENERATORS.randomPunctuation()}`;
-    },
-
-    // 7. Текст + число + пунктуация + отступ
-    textFull: () => {
-      return `${GENERATORS.randomPadding()}${GENERATORS.randomText()}${GENERATORS.randomNumber()}${GENERATORS.randomPunctuation()}${GENERATORS.randomPadding()}`;
-    },
-
-    // 8. Рандомное количество элементов
-    randomCombination: (count = settings.elementCount) => {
-      const types = [
-        GENERATORS.randomText,
-        GENERATORS.randomNumber,
-        GENERATORS.randomPunctuation,
-        GENERATORS.randomPadding
-      ];
-      let result = '';
-      const actualCount = Math.floor(Math.random() * count) + 1;
-      for (let i = 0; i < actualCount; i++) {
-        const randomType = types[Math.floor(Math.random() * types.length)];
-        result += randomType();
+    product: {
+      label: "📦 Product",
+      data: {
+        title: "Wireless Mouse",
+        price: 29.99,
+        category: "electronics",
+        description: "Ergonomic wireless mouse with USB receiver",
+        inStock: true,
+        rating: 4.5
       }
-      return result;
     },
-
-    // 9. Кастомное значение из файла
-    customValue: () => {
-      if (customData.custom.length === 0) return 'No custom data';
-      return customData.custom[Math.floor(Math.random() * customData.custom.length)];
+    order: {
+      label: "🛒 Order",
+      data: {
+        orderId: 10001,
+        customer: "Jane Smith",
+        email: "jane@mail.com",
+        total: 159.90,
+        status: "pending",
+        items: 3,
+        shipping: {
+          city: "Moscow",
+          zip: "101000",
+          address: "Red Square 1"
+        }
+      }
     },
-
-    // 10. Кастомные списки (текст, число, символы)
-    fromCustomLists: () => {
-      const parts = [];
-      if (customData.texts.length > 0) {
-        parts.push(customData.texts[Math.floor(Math.random() * customData.texts.length)]);
+    auth: {
+      label: "🔐 Auth",
+      data: {
+        username: "testuser",
+        password: "qwerty123",
+        email: "test@example.com",
+        rememberMe: false
       }
-      if (customData.numbers.length > 0) {
-        parts.push(customData.numbers[Math.floor(Math.random() * customData.numbers.length)]);
-      }
-      if (customData.symbols.length > 0) {
-        parts.push(customData.symbols[Math.floor(Math.random() * customData.symbols.length)]);
-      }
-      return parts.join('');
     }
   };
 
-  /**
-   * Создать панель в DOM
-   */
+  // ============================================================
+  // GENERATORS — smart per-type
+  // ============================================================
+  const GEN_TYPES = {
+    auto:     { label: "Auto",          fn: autoGenerate },
+    text:     { label: "Текст",         fn: () => randomString(8) },
+    name:     { label: "Имя",           fn: () => pickRandom(NAMES) },
+    email:    { label: "Email",         fn: () => `${randomString(6)}@${pickRandom(["gmail.com","mail.com","test.com","example.com"])}` },
+    phone:    { label: "Телефон",       fn: () => `+7-${rndDigits(3)}-${rndDigits(3)}-${rndDigits(4)}` },
+    url:      { label: "URL",           fn: () => `https://${randomString(6)}.${pickRandom(["com","org","io","dev"])}` },
+    number:   { label: "Число",         fn: () => Math.floor(Math.random() * 10000) },
+    float:    { label: "Дробное",       fn: () => +(Math.random() * 1000).toFixed(2) },
+    bool:     { label: "true/false",    fn: () => Math.random() > 0.5 },
+    uuid:     { label: "UUID",          fn: generateUUID },
+    lorem:    { label: "Lorem",         fn: () => pickRandom(LOREM_SENTENCES) },
+    city:     { label: "Город",         fn: () => pickRandom(CITIES) },
+    status:   { label: "Статус",        fn: () => pickRandom(["active","inactive","pending","approved","rejected","cancelled"]) },
+    password: { label: "Пароль",        fn: () => randomMixedString(12) },
+    date:     { label: "Дата",          fn: () => randomDate() },
+    custom:   { label: "📋 Из списка...", fn: null }, // special — uses field's customList
+  };
+
+  const NAMES = [
+    "John Doe", "Jane Smith", "Alice Johnson", "Bob Williams", "Charlie Brown",
+    "Diana Prince", "Edward Norton", "Fiona Apple", "George Lucas", "Helen Troy",
+    "Ivan Petrov", "Julia Roberts", "Kevin Hart", "Laura Palmer", "Olga Smirnova",
+    "Dmitry Ivanov", "Elena Volkova", "Sergey Kozlov", "Anna Petrova", "Max Fischer",
+  ];
+
+  const CITIES = [
+    "Moscow", "London", "New York", "Berlin", "Tokyo", "Paris",
+    "Sydney", "Toronto", "Dubai", "Singapore", "Rome", "Istanbul",
+  ];
+
+  const LOREM_SENTENCES = [
+    "Lorem ipsum dolor sit amet",
+    "Consectetur adipiscing elit",
+    "Sed do eiusmod tempor incididunt",
+    "Ut labore et dolore magna aliqua",
+    "Duis aute irure dolor in reprehenderit",
+    "Excepteur sint occaecat cupidatat non proident",
+  ];
+
+  // ============================================================
+  // HELPERS
+  // ============================================================
+  function randomString(len) {
+    const chars = "abcdefghijklmnopqrstuvwxyz";
+    let r = "";
+    for (let i = 0; i < len; i++) r += chars[Math.floor(Math.random() * chars.length)];
+    return r;
+  }
+
+  function randomMixedString(len) {
+    const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%";
+    let r = "";
+    for (let i = 0; i < len; i++) r += chars[Math.floor(Math.random() * chars.length)];
+    return r;
+  }
+
+  function rndDigits(n) {
+    let r = "";
+    for (let i = 0; i < n; i++) r += Math.floor(Math.random() * 10);
+    return r;
+  }
+
+  function pickRandom(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+  function generateUUID() {
+    return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      return (c === "x" ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  }
+
+  function randomDate() {
+    const d = new Date(Date.now() - Math.floor(Math.random() * 365 * 24 * 60 * 60 * 1000));
+    return d.toISOString().split("T")[0];
+  }
+
+  /** Auto-detect type from field key and original value */
+  function autoGenerate(key, value) {
+    const k = (key || "").toLowerCase();
+    if (k.includes("email"))    return GEN_TYPES.email.fn();
+    if (k.includes("password") || k.includes("pass")) return GEN_TYPES.password.fn();
+    if (k.includes("phone") || k.includes("tel"))     return GEN_TYPES.phone.fn();
+    if (k.includes("url") || k.includes("website") || k.includes("site")) return GEN_TYPES.url.fn();
+    if (k.includes("city"))     return GEN_TYPES.city.fn();
+    if (k.includes("status") || k === "state") return GEN_TYPES.status.fn();
+    if (k.includes("date") || k.includes("created") || k.includes("updated")) return GEN_TYPES.date.fn();
+    if (k.includes("name") || k.includes("username") || k.includes("customer")) return GEN_TYPES.name.fn();
+    if (k.includes("uuid") || k.includes("guid")) return GEN_TYPES.uuid.fn();
+    if (k.includes("description") || k.includes("catchphrase") || k.includes("bio")) return GEN_TYPES.lorem.fn();
+    if (k.includes("zip") || k.includes("code")) return rndDigits(6);
+    if (k.includes("address"))  return `${pickRandom(CITIES)}, ${randomString(6)} st. ${Math.floor(Math.random()*200)+1}`;
+    if (k.includes("price") || k.includes("total") || k.includes("amount") || k.includes("rating")) return GEN_TYPES.float.fn();
+    if (k.includes("id") && typeof value === "number") return Math.floor(Math.random() * 100000);
+    if (typeof value === "number" && !Number.isInteger(value)) return GEN_TYPES.float.fn();
+    if (typeof value === "number") return GEN_TYPES.number.fn();
+    if (typeof value === "boolean") return GEN_TYPES.bool.fn();
+    return GEN_TYPES.text.fn();
+  }
+
+  function truncate(str, max) {
+    return str.length > max ? str.substring(0, max) + "..." : str;
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = String(text);
+    return div.innerHTML;
+  }
+
+  // ============================================================
+  // PANEL UI
+  // ============================================================
   function createPanel() {
-    let panel = document.getElementById('randomizer-v2-panel');
+    let panel = document.getElementById("randomizer-v2-panel");
     if (panel) return;
 
-    panel = document.createElement('div');
-    panel.id = 'randomizer-v2-panel';
-    panel.className = 'randomizer-v2-panel';
+    panel = document.createElement("div");
+    panel.id = "randomizer-v2-panel";
+    panel.className = "randomizer-v2-panel";
+
+    // Build example buttons HTML
+    const exampleBtns = Object.entries(EXAMPLES)
+      .map(([k, v]) => `<button class="rv2-example-btn randomizer-btn" data-example="${k}" style="font-size:11px;padding:3px 8px;">${v.label}</button>`)
+      .join("");
 
     panel.innerHTML = `
       <div class="randomizer-v2-header">
         <div class="randomizer-v2-title">
-          <span>🎲</span> Advanced Randomizer v2
+          <span>🎲</span> Template Randomizer
         </div>
         <div class="randomizer-v2-controls">
-          <button id="randomizer-v2-collapse" class="randomizer-btn" title="Свернуть">
+          <button id="rv2-collapse" class="randomizer-btn" title="Свернуть">
             <i class="bi bi-chevron-up"></i>
           </button>
-          <button id="randomizer-v2-close" class="randomizer-btn" title="Закрыть">
+          <button id="rv2-close" class="randomizer-btn" title="Закрыть">
             <i class="bi bi-x"></i>
           </button>
         </div>
       </div>
 
       <div class="randomizer-v2-content">
-        <!-- TABS -->
-        <div class="randomizer-v2-tabs">
-          <button class="randomizer-v2-tab active" data-tab="generators">
-            📊 Генераторы (10)
-          </button>
-          <button class="randomizer-v2-tab" data-tab="settings">
-            ⚙️ Настройки
-          </button>
-          <button class="randomizer-v2-tab" data-tab="preview">
-            👁️ Предпросмотр
-          </button>
-        </div>
-
-        <!-- TAB: GENERATORS -->
-        <div id="tab-generators" class="randomizer-v2-tab-content active">
-          <div class="randomizer-v2-generators">
-            
-            <!-- 1. Random Text -->
-            <div class="randomizer-gen-item">
-              <label>
-                <input type="checkbox" class="randomizer-gen-toggle" value="randomText" checked>
-                <span>📝 Рандомный текст</span>
-              </label>
-              <button class="randomizer-gen-btn" data-gen="randomText">Generate</button>
-            </div>
-
-            <!-- 2. Random Punctuation -->
-            <div class="randomizer-gen-item">
-              <label>
-                <input type="checkbox" class="randomizer-gen-toggle" value="randomPunctuation" checked>
-                <span>❗ Рандомный знак пунктуации</span>
-              </label>
-              <button class="randomizer-gen-btn" data-gen="randomPunctuation">Generate</button>
-            </div>
-
-            <!-- 3. Random Padding -->
-            <div class="randomizer-gen-item">
-              <label>
-                <input type="checkbox" class="randomizer-gen-toggle" value="randomPadding" checked>
-                <span>↔️ Рандомный отступ</span>
-              </label>
-              <button class="randomizer-gen-btn" data-gen="randomPadding">Generate</button>
-            </div>
-
-            <!-- 4. Random Number -->
-            <div class="randomizer-gen-item">
-              <label>
-                <input type="checkbox" class="randomizer-gen-toggle" value="randomNumber" checked>
-                <span>🔢 Рандомное число</span>
-              </label>
-              <button class="randomizer-gen-btn" data-gen="randomNumber">Generate</button>
-            </div>
-
-            <!-- 5. Text + Number -->
-            <div class="randomizer-gen-item">
-              <label>
-                <input type="checkbox" class="randomizer-gen-toggle" value="textWithNumber" checked>
-                <span>📝🔢 Текст + число</span>
-              </label>
-              <button class="randomizer-gen-btn" data-gen="textWithNumber">Generate</button>
-            </div>
-
-            <!-- 6. Text + Punctuation -->
-            <div class="randomizer-gen-item">
-              <label>
-                <input type="checkbox" class="randomizer-gen-toggle" value="textWithPunctuation" checked>
-                <span>📝❗ Текст + пунктуация</span>
-              </label>
-              <button class="randomizer-gen-btn" data-gen="textWithPunctuation">Generate</button>
-            </div>
-
-            <!-- 7. Text Full -->
-            <div class="randomizer-gen-item">
-              <label>
-                <input type="checkbox" class="randomizer-gen-toggle" value="textFull" checked>
-                <span>✨ Полный: текст+число+пункт+отступ</span>
-              </label>
-              <button class="randomizer-gen-btn" data-gen="textFull">Generate</button>
-            </div>
-
-            <!-- 8. Random Combination -->
-            <div class="randomizer-gen-item">
-              <label>
-                <input type="checkbox" class="randomizer-gen-toggle" value="randomCombination" checked>
-                <span>🎯 Рандомная комбинация элементов</span>
-              </label>
-              <button class="randomizer-gen-btn" data-gen="randomCombination">Generate</button>
-            </div>
-
-            <!-- 9. Custom Value -->
-            <div class="randomizer-gen-item">
-              <label>
-                <input type="checkbox" class="randomizer-gen-toggle" value="customValue">
-                <span>📦 Кастомное значение из файла</span>
-              </label>
-              <button class="randomizer-gen-btn" data-gen="customValue">Generate</button>
-            </div>
-
-            <!-- 10. From Custom Lists -->
-            <div class="randomizer-gen-item">
-              <label>
-                <input type="checkbox" class="randomizer-gen-toggle" value="fromCustomLists">
-                <span>📋 Из кастомных списков</span>
-              </label>
-              <button class="randomizer-gen-btn" data-gen="fromCustomLists">Generate</button>
-            </div>
-          </div>
-
-          <!-- BATCH GENERATION -->
-          <div class="randomizer-batch">
-            <div class="randomizer-batch-controls">
-              <input type="number" id="batch-count" class="randomizer-input" value="5" min="1" max="100" placeholder="Количество">
-              <button id="batch-generate-btn" class="randomizer-btn-primary">🔄 Генерировать набор</button>
-            </div>
-            <div id="batch-output" class="randomizer-output"></div>
+        <!-- EXAMPLES ROW -->
+        <div style="padding:8px 12px;border-bottom:1px solid var(--border-color);flex-shrink:0;">
+          <label style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.05em;display:block;margin-bottom:4px;">Примеры шаблонов:</label>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;">
+            ${exampleBtns}
           </div>
         </div>
 
-        <!-- TAB: SETTINGS -->
-        <div id="tab-settings" class="randomizer-v2-tab-content">
-          <div class="randomizer-settings">
-            <div class="randomizer-setting-item">
-              <label>Длина текста:</label>
-              <input type="number" id="text-length-input" class="randomizer-input" value="10" min="1" max="100">
-            </div>
+        <!-- TOP: Load / Select controls -->
+        <div style="padding:8px 12px;border-bottom:1px solid var(--border-color);display:flex;gap:6px;flex-shrink:0;align-items:center;">
+          <button id="rv2-load-body" class="randomizer-btn-primary" style="flex:1;font-size:12px;">
+            📥 Из Body
+          </button>
+          <button id="rv2-load-file" class="randomizer-btn" style="font-size:11px;" title="Загрузить JSON шаблон из файла">
+            📁 Файл
+          </button>
+          <input type="file" id="rv2-file-input" accept=".json,.txt" style="display:none;">
+          <span style="color:var(--border-color);font-size:14px;">|</span>
+          <button id="rv2-select-all" class="randomizer-btn" style="font-size:11px;" title="Выбрать все">☑</button>
+          <button id="rv2-deselect-all" class="randomizer-btn" style="font-size:11px;" title="Снять все">☐</button>
+        </div>
 
-            <div class="randomizer-setting-item">
-              <label>Диапазон чисел:</label>
-              <div class="randomizer-range">
-                <input type="number" id="number-min" class="randomizer-input" value="1" placeholder="Min">
-                <span>-</span>
-                <input type="number" id="number-max" class="randomizer-input" value="1000" placeholder="Max">
-              </div>
-            </div>
-
-            <div class="randomizer-setting-item">
-              <label>Длина символов:</label>
-              <input type="number" id="symbols-length-input" class="randomizer-input" value="5" min="1" max="50">
-            </div>
-
-            <div class="randomizer-setting-item">
-              <label>Количество отступов:</label>
-              <input type="number" id="padding-spaces-input" class="randomizer-input" value="2" min="1" max="20">
-            </div>
-
-            <div class="randomizer-setting-item">
-              <label>Количество элементов в комбо:</label>
-              <input type="number" id="element-count-input" class="randomizer-input" value="5" min="1" max="20">
-            </div>
-
-            <!-- FILE UPLOAD -->
-            <div class="randomizer-setting-item">
-              <label>📁 Загрузить JSON/TXT:</label>
-              <input type="file" id="custom-file-input" class="randomizer-input" accept=".json,.txt">
-              <small>JSON: {"texts": [], "numbers": [], "symbols": []}</small>
-            </div>
+        <!-- FIELDS LIST -->
+        <div id="rv2-fields" class="randomizer-v2-tab-content active" style="padding:8px 12px;overflow-y:auto;flex:1;max-height:350px;">
+          <div style="color:var(--text-dim);text-align:center;padding:16px 0;font-size:12px;">
+            <p style="margin:0 0 8px;">Выбери пример шаблона выше или нажми <strong>"Из Body"</strong></p>
+            <p style="margin:0;font-size:11px;color:var(--text-dim);">
+              Формат: обычный JSON объект, например:<br>
+              <code style="color:var(--accent);font-size:11px;">{"name": "John", "email": "j@mail.com", "age": 25}</code>
+            </p>
           </div>
         </div>
 
-        <!-- TAB: PREVIEW -->
-        <div id="tab-preview" class="randomizer-v2-tab-content">
-          <div class="randomizer-preview">
-            <h4>Результаты</h4>
-            <div id="preview-output" class="randomizer-output-large"></div>
-            <button id="copy-preview-btn" class="randomizer-btn-secondary">📋 Скопировать</button>
+        <!-- CUSTOM LIST EDITOR (hidden by default) -->
+        <div id="rv2-custom-editor" style="padding:8px 12px;border-top:1px solid var(--border-color);display:none;">
+          <label style="font-size:11px;color:var(--accent);font-weight:600;">
+            Свои значения для поля <strong id="rv2-custom-field-name"></strong>:
+          </label>
+          <textarea id="rv2-custom-values" class="randomizer-input" rows="3"
+            style="width:100%;margin-top:4px;font-size:11px;"
+            placeholder="По одному на строку:&#10;значение 1&#10;значение 2&#10;значение 3"></textarea>
+          <div style="display:flex;gap:6px;margin-top:4px;">
+            <button id="rv2-custom-save" class="randomizer-btn-primary" style="font-size:11px;">✓ Сохранить список</button>
+            <button id="rv2-custom-cancel" class="randomizer-btn" style="font-size:11px;">Отмена</button>
           </div>
+        </div>
+
+        <!-- PREVIEW -->
+        <div id="rv2-preview-wrap" style="padding:8px 12px;border-top:1px solid var(--border-color);max-height:180px;overflow-y:auto;display:none;">
+          <label style="font-size:11px;color:var(--accent);font-weight:600;">Результат:</label>
+          <pre id="rv2-preview" style="background:var(--bg-app);color:var(--accent);padding:8px;border-radius:4px;font-size:11px;margin:4px 0 0;max-height:140px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;"></pre>
+        </div>
+
+        <!-- ACTIONS -->
+        <div style="padding:10px 12px;border-top:1px solid var(--border-color);display:flex;gap:6px;flex-shrink:0;">
+          <button id="rv2-generate" class="randomizer-btn-primary" style="flex:2;">
+            🎲 Сгенерировать
+          </button>
+          <button id="rv2-copy" class="randomizer-btn" style="flex:1;" title="Скопировать JSON">
+            📋 Copy
+          </button>
+          <button id="rv2-insert" class="randomizer-btn-primary" style="flex:1;" title="Вставить в Body">
+            ⬇ Insert
+          </button>
         </div>
       </div>
     `;
@@ -303,149 +287,340 @@ const RandomizerV2 = (() => {
     attachEventListeners();
   }
 
-  /**
-   * Прикрепить слушатели событий
-   */
+  // ============================================================
+  // EVENT LISTENERS
+  // ============================================================
+  let _editingCustomIdx = -1; // which field's custom list we're editing
+
   function attachEventListeners() {
-    // Tab switching
-    document.querySelectorAll('.randomizer-v2-tab').forEach(tab => {
-      tab.addEventListener('click', (e) => {
-        const tabName = e.target.dataset.tab;
-        document.querySelectorAll('.randomizer-v2-tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.randomizer-v2-tab-content').forEach(c => c.classList.remove('active'));
-        e.target.classList.add('active');
-        document.getElementById(`tab-${tabName}`).classList.add('active');
+    document.getElementById("rv2-close").addEventListener("click", () => RandomizerV2.hide());
+    document.getElementById("rv2-collapse").addEventListener("click", () => {
+      const c = document.querySelector(".randomizer-v2-content");
+      c.style.display = c.style.display === "none" ? "flex" : "none";
+    });
+
+    // Examples
+    document.querySelectorAll(".rv2-example-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const key = btn.dataset.example;
+        const ex = EXAMPLES[key];
+        if (!ex) return;
+        loadTemplate(ex.data);
+        // Also put into active tab body so user sees it
+        _setActiveTabBody(JSON.stringify(ex.data, null, 2));
       });
     });
 
-    // Individual generators
-    document.querySelectorAll('.randomizer-gen-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const genType = btn.dataset.gen;
-        if (GENERATORS[genType]) {
-          const result = GENERATORS[genType]();
-          displayPreview(result);
+    document.getElementById("rv2-load-body").addEventListener("click", loadFromBody);
+
+    // File load
+    document.getElementById("rv2-load-file").addEventListener("click", () => {
+      document.getElementById("rv2-file-input").click();
+    });
+    document.getElementById("rv2-file-input").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const data = JSON.parse(ev.target.result);
+          loadTemplate(data);
+          _setActiveTabBody(JSON.stringify(data, null, 2));
+        } catch (err) {
+          alert("Файл не является валидным JSON!\n" + err.message);
         }
-      });
+      };
+      reader.readAsText(file);
+      e.target.value = ""; // reset so same file can be loaded again
     });
 
-    // Batch generation
-    document.getElementById('batch-generate-btn')?.addEventListener('click', () => {
-      const count = parseInt(document.getElementById('batch-count').value) || 5;
-      const enabled = Array.from(document.querySelectorAll('.randomizer-gen-toggle:checked')).map(c => c.value);
-      
-      if (enabled.length === 0) {
-        alert('Выбери хотя бы один генератор!');
-        return;
-      }
+    document.getElementById("rv2-select-all").addEventListener("click", () => toggleAll(true));
+    document.getElementById("rv2-deselect-all").addEventListener("click", () => toggleAll(false));
+    document.getElementById("rv2-generate").addEventListener("click", generate);
+    document.getElementById("rv2-copy").addEventListener("click", copyResult);
+    document.getElementById("rv2-insert").addEventListener("click", insertResult);
 
-      const results = [];
-      for (let i = 0; i < count; i++) {
-        const randomGen = enabled[Math.floor(Math.random() * enabled.length)];
-        results.push(GENERATORS[randomGen]());
-      }
+    // Custom list editor
+    document.getElementById("rv2-custom-save").addEventListener("click", saveCustomList);
+    document.getElementById("rv2-custom-cancel").addEventListener("click", hideCustomEditor);
+  }
 
-      document.getElementById('batch-output').innerHTML = `
-        <div style="background: #444; padding: 12px; border-radius: 4px; color: #0f0; font-family: monospace; font-size: 12px;">
-          ${results.map((r, i) => `<div>${i + 1}. <code>${escapeHtml(r)}</code></div>`).join('')}
+  // ============================================================
+  // SET ACTIVE TAB BODY (helper)
+  // ============================================================
+  function _setActiveTabBody(json) {
+    const tab = App.getActiveTab();
+    if (!tab) return;
+    if (!["POST", "PUT", "PATCH"].includes(tab.method)) tab.method = "POST";
+    tab.body = json;
+    tab.activeSubTab = "body";
+    App.renderTabContent();
+  }
+
+  // ============================================================
+  // LOAD TEMPLATE
+  // ============================================================
+  function loadFromBody() {
+    const tab = App.getActiveTab();
+    if (!tab) { alert("Нет активной вкладки!"); return; }
+
+    const textarea = document.getElementById("body-textarea");
+    const raw = textarea ? textarea.value : (tab.body || "");
+
+    if (!raw.trim()) {
+      alert("Body пуст! Выбери пример шаблона или введи JSON в Body.");
+      return;
+    }
+
+    try {
+      const obj = JSON.parse(raw);
+      loadTemplate(obj);
+    } catch (e) {
+      alert("Body не является валидным JSON!\n" + e.message);
+    }
+  }
+
+  function loadTemplate(obj) {
+    templateObj = JSON.parse(JSON.stringify(obj)); // deep clone
+    fieldConfigs = [];
+    parseFields(templateObj, "");
+    renderFields();
+    // Hide preview from previous run
+    document.getElementById("rv2-preview-wrap").style.display = "none";
+    hideCustomEditor();
+    lastGenerated = null;
+  }
+
+  /** Recursively parse JSON object into flat field list */
+  function parseFields(obj, prefix) {
+    for (const key of Object.keys(obj)) {
+      const path = prefix ? `${prefix}.${key}` : key;
+      const val = obj[key];
+
+      if (val !== null && typeof val === "object" && !Array.isArray(val)) {
+        parseFields(val, path);
+      } else {
+        // Detect best default gen type
+        const detectedType = detectBestType(key, val);
+        fieldConfigs.push({
+          path,
+          key,
+          originalValue: val,
+          checked: true,
+          genType: detectedType,
+          customList: [], // for "custom" type
+        });
+      }
+    }
+  }
+
+  /** Detect the best generator type based on key name and value */
+  function detectBestType(key, value) {
+    const k = (key || "").toLowerCase();
+    if (k.includes("email")) return "email";
+    if (k.includes("password") || k.includes("pass")) return "password";
+    if (k.includes("phone") || k.includes("tel")) return "phone";
+    if (k.includes("url") || k.includes("website") || k.includes("site")) return "url";
+    if (k.includes("city")) return "city";
+    if (k.includes("status") || k === "state") return "status";
+    if (k.includes("date") || k.includes("created") || k.includes("updated")) return "date";
+    if (k.includes("name") || k.includes("username") || k.includes("customer")) return "name";
+    if (k.includes("uuid") || k.includes("guid")) return "uuid";
+    if (k.includes("description") || k.includes("catchphrase") || k.includes("bio")) return "lorem";
+    if (k.includes("price") || k.includes("total") || k.includes("amount") || k.includes("rating")) return "float";
+    if (typeof value === "number" && !Number.isInteger(value)) return "float";
+    if (typeof value === "number") return "number";
+    if (typeof value === "boolean") return "bool";
+    return "text";
+  }
+
+  // ============================================================
+  // RENDER FIELDS
+  // ============================================================
+  function renderFields() {
+    const container = document.getElementById("rv2-fields");
+
+    if (fieldConfigs.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-dim);text-align:center;font-size:12px;">Нет полей</p>';
+      return;
+    }
+
+    const genOptions = Object.entries(GEN_TYPES)
+      .map(([k, v]) => `<option value="${k}">${v.label}</option>`)
+      .join("");
+
+    let html = "";
+    fieldConfigs.forEach((fc, idx) => {
+      const displayVal = fc.originalValue === null ? "null"
+        : typeof fc.originalValue === "string" ? `"${truncate(fc.originalValue, 20)}"`
+        : String(fc.originalValue);
+
+      const customBadge = fc.genType === "custom" && fc.customList.length > 0
+        ? `<span style="font-size:9px;color:var(--accent);margin-left:2px;">(${fc.customList.length})</span>`
+        : "";
+
+      html += `
+        <div class="randomizer-gen-item" style="margin-bottom:4px;padding:6px 8px;">
+          <label style="flex:1;display:flex;align-items:center;gap:6px;min-width:0;cursor:pointer;">
+            <input type="checkbox" class="rv2-field-check" data-idx="${idx}" ${fc.checked ? "checked" : ""}>
+            <span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              <strong>${escapeHtml(fc.path)}</strong>
+              <span style="color:var(--text-dim);margin-left:4px;font-size:11px;">${escapeHtml(displayVal)}</span>
+            </span>
+          </label>
+          <div style="display:flex;gap:3px;align-items:center;flex-shrink:0;">
+            <select class="rv2-field-type" data-idx="${idx}" style="
+              width:110px;
+              padding:3px 4px;
+              background:var(--bg-input);color:var(--text-main);
+              border:1px solid var(--border-color);border-radius:3px;font-size:10px;
+            ">${genOptions}</select>
+            ${customBadge}
+          </div>
         </div>
       `;
     });
 
-    // Settings
-    document.getElementById('text-length-input')?.addEventListener('change', (e) => {
-      settings.textLength = parseInt(e.target.value) || 10;
+    container.innerHTML = html;
+
+    // Wire checkboxes
+    container.querySelectorAll(".rv2-field-check").forEach(cb => {
+      cb.addEventListener("change", (e) => {
+        fieldConfigs[+e.target.dataset.idx].checked = e.target.checked;
+      });
     });
 
-    document.getElementById('number-min')?.addEventListener('change', (e) => {
-      settings.numberRange[0] = parseInt(e.target.value) || 1;
-    });
-
-    document.getElementById('number-max')?.addEventListener('change', (e) => {
-      settings.numberRange[1] = parseInt(e.target.value) || 1000;
-    });
-
-    // File upload
-    document.getElementById('custom-file-input')?.addEventListener('change', handleFileUpload);
-
-    // Close/collapse
-    document.getElementById('randomizer-v2-close')?.addEventListener('click', () => {
-      const panel = document.getElementById('randomizer-v2-panel');
-      if (panel) panel.style.display = 'none';
-    });
-
-    document.getElementById('randomizer-v2-collapse')?.addEventListener('click', () => {
-      const content = document.querySelector('.randomizer-v2-content');
-      if (content) content.style.display = content.style.display === 'none' ? 'flex' : 'none';
-    });
-
-    // Copy preview
-    document.getElementById('copy-preview-btn')?.addEventListener('click', () => {
-      const text = document.getElementById('preview-output').textContent;
-      navigator.clipboard.writeText(text).then(() => {
-        alert('✅ Скопировано!');
+    // Wire gen-type selects
+    container.querySelectorAll(".rv2-field-type").forEach(sel => {
+      sel.value = fieldConfigs[+sel.dataset.idx].genType;
+      sel.addEventListener("change", (e) => {
+        const idx = +e.target.dataset.idx;
+        fieldConfigs[idx].genType = e.target.value;
+        // If "custom" selected — open custom list editor
+        if (e.target.value === "custom") {
+          openCustomEditor(idx);
+        }
       });
     });
   }
 
-  /**
-   * Обработка загрузки файла
-   */
-  function handleFileUpload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        if (file.name.endsWith('.json')) {
-          const data = JSON.parse(event.target.result);
-          customData = data;
-        } else if (file.name.endsWith('.txt')) {
-          customData.custom = event.target.result.split('\n').filter(l => l.trim());
-        }
-        alert('✅ Данные загружены!');
-      } catch (err) {
-        alert('❌ Ошибка загрузки: ' + err.message);
-      }
-    };
-    reader.readAsText(file);
+  // ============================================================
+  // CUSTOM LIST EDITOR
+  // ============================================================
+  function openCustomEditor(idx) {
+    _editingCustomIdx = idx;
+    const fc = fieldConfigs[idx];
+    document.getElementById("rv2-custom-field-name").textContent = fc.path;
+    document.getElementById("rv2-custom-values").value = fc.customList.join("\n");
+    document.getElementById("rv2-custom-editor").style.display = "block";
+    document.getElementById("rv2-custom-values").focus();
   }
 
-  /**
-   * Показать предпросмотр
-   */
-  function displayPreview(value) {
-    const preview = document.getElementById('preview-output');
-    if (preview) {
-      preview.innerHTML += `<div class="preview-item"><code>${escapeHtml(value)}</code></div>`;
-      preview.scrollTop = preview.scrollHeight;
+  function saveCustomList() {
+    if (_editingCustomIdx < 0) return;
+    const raw = document.getElementById("rv2-custom-values").value;
+    fieldConfigs[_editingCustomIdx].customList = raw.split("\n").map(s => s.trim()).filter(Boolean);
+    hideCustomEditor();
+    renderFields(); // re-render to show badge count
+  }
+
+  function hideCustomEditor() {
+    _editingCustomIdx = -1;
+    document.getElementById("rv2-custom-editor").style.display = "none";
+  }
+
+  // ============================================================
+  // GENERATE
+  // ============================================================
+  function generate() {
+    if (fieldConfigs.length === 0) {
+      alert("Сначала загрузи шаблон!");
+      return;
     }
+
+    // Deep clone template
+    const result = JSON.parse(JSON.stringify(templateObj));
+
+    // Replace only checked fields
+    fieldConfigs.forEach(fc => {
+      if (!fc.checked) return;
+
+      let newVal;
+      if (fc.genType === "custom") {
+        // Pick from user's custom list
+        if (fc.customList.length > 0) {
+          const picked = pickRandom(fc.customList);
+          // Try to preserve type: if original was number and picked looks like number
+          if (typeof fc.originalValue === "number") {
+            const n = Number(picked);
+            newVal = isNaN(n) ? picked : n;
+          } else if (typeof fc.originalValue === "boolean") {
+            newVal = picked.toLowerCase() === "true";
+          } else {
+            newVal = picked;
+          }
+        } else {
+          newVal = fc.originalValue; // no list — keep original
+        }
+      } else if (fc.genType === "auto") {
+        newVal = autoGenerate(fc.key, fc.originalValue);
+      } else {
+        newVal = GEN_TYPES[fc.genType].fn();
+      }
+
+      setNestedValue(result, fc.path, newVal);
+    });
+
+    lastGenerated = JSON.stringify(result, null, 2);
+
+    // Show preview
+    document.getElementById("rv2-preview-wrap").style.display = "block";
+    document.getElementById("rv2-preview").textContent = lastGenerated;
   }
 
-  /**
-   * Экранировать HTML
-   */
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+  /** Set value at dot-separated path in object */
+  function setNestedValue(obj, path, value) {
+    const keys = path.split(".");
+    let current = obj;
+    for (let i = 0; i < keys.length - 1; i++) {
+      current = current[keys[i]];
+      if (!current) return;
+    }
+    current[keys[keys.length - 1]] = value;
   }
 
-  // Public API
+  // ============================================================
+  // COPY / INSERT
+  // ============================================================
+  function copyResult() {
+    if (!lastGenerated) { alert("Сначала сгенерируй!"); return; }
+    navigator.clipboard.writeText(lastGenerated);
+  }
+
+  function insertResult() {
+    if (!lastGenerated) { alert("Сначала сгенерируй!"); return; }
+    _setActiveTabBody(lastGenerated);
+  }
+
+  // ============================================================
+  // TOGGLE ALL
+  // ============================================================
+  function toggleAll(state) {
+    fieldConfigs.forEach(fc => fc.checked = state);
+    document.querySelectorAll(".rv2-field-check").forEach(cb => cb.checked = state);
+  }
+
+  // ============================================================
+  // PUBLIC API
+  // ============================================================
   return {
     show: () => {
       createPanel();
-      document.getElementById('randomizer-v2-panel').style.display = 'flex';
+      document.getElementById("randomizer-v2-panel").style.display = "flex";
     },
     hide: () => {
-      const panel = document.getElementById('randomizer-v2-panel');
-      if (panel) panel.style.display = 'none';
-    }
+      const panel = document.getElementById("randomizer-v2-panel");
+      if (panel) panel.style.display = "none";
+    },
   };
 })();
-
-// Init
-document.addEventListener('DOMContentLoaded', () => {
-  RandomizerV2.show();
-});

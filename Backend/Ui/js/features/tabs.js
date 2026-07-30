@@ -15,6 +15,7 @@ window.App = window.App || {};
       responseViewMode: "body",
       sending: false,
       response: null,
+      userAgent: "",
       crudEntity: null,
       crudAction: null,
     };
@@ -27,6 +28,10 @@ window.App = window.App || {};
   };
 
   App.addTab = function (overrides) {
+    if (state.tabs.length >= App.LIMITS.MAX_TABS) {
+      alert(`Максимум ${App.LIMITS.MAX_TABS} вкладок!`);
+      return null;
+    }
     const tab = App.createTab(overrides);
     state.tabs.push(tab);
     state.activeTabId = tab.id;

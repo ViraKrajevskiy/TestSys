@@ -85,19 +85,53 @@ body {
 /* ==================== SIDEBAR ==================== */
 #sidebar {
   width: 240px;
-  min-width: 240px;
+  min-width: 120px;
+  max-width: 500px;
   background: var(--bg-panel);
   border-right: 1px solid var(--border-color);
   overflow-y: auto;
   overflow-x: hidden;
-  transition: width 0.18s ease, min-width 0.18s ease, padding 0.18s ease, border-color 0.18s ease;
+  transition: border-color 0.18s ease;
   white-space: nowrap;
+  position: relative;
+  flex-shrink: 0;
 }
 
 #app-root.sidebar-collapsed #sidebar {
-  width: 0;
-  min-width: 0;
+  width: 0 !important;
+  min-width: 0 !important;
   border-right-color: transparent;
+  overflow: hidden;
+}
+
+/* Resize handle для sidebar */
+#sidebar-resize-handle {
+  position: absolute;
+  right: -3px;
+  top: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 0.2s;
+}
+#sidebar-resize-handle:hover,
+#sidebar-resize-handle.active {
+  background: var(--accent);
+}
+
+/* Resize handle для response panel */
+.response-resize-handle {
+  height: 5px;
+  cursor: row-resize;
+  background: transparent;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.response-resize-handle:hover,
+.response-resize-handle.active {
+  background: var(--accent);
 }
 
 .brand { font-size: 1.05rem; font-weight: 700; letter-spacing: 0.2px; }
@@ -328,11 +362,13 @@ body {
 .body-textarea:focus { border-color: var(--accent); box-shadow: none; background: var(--bg-input); color: var(--text-main); }
 
 .response-panel {
-  margin-top: 24px;
+  margin-top: 0;
   border: 1px solid var(--border-color);
   border-radius: var(--radius);
   background: var(--bg-panel);
   padding: 16px;
+  overflow-y: auto;
+  flex-shrink: 0;
 }
 
 .response-status {
@@ -566,3 +602,103 @@ body {
   background: var(--bg-input);
   color: var(--text-main);
 }
+
+/* ==================== BOOTSTRAP OVERRIDES (для полной поддержки тем) ==================== */
+
+/* Все модалки */
+.modal-content {
+  background: var(--bg-panel) !important;
+  color: var(--text-main) !important;
+  border-color: var(--border-color) !important;
+}
+.modal-header {
+  border-bottom-color: var(--border-color) !important;
+}
+.modal-footer {
+  border-top-color: var(--border-color) !important;
+}
+
+/* Dropdown / context menu */
+.dropdown-menu {
+  background: var(--bg-panel);
+  border-color: var(--border-color);
+  color: var(--text-main);
+}
+.dropdown-item {
+  color: var(--text-main);
+}
+.dropdown-item:hover, .dropdown-item:focus {
+  background: var(--bg-input);
+  color: var(--text-main);
+}
+.dropdown-divider {
+  border-color: var(--border-color);
+}
+
+/* Form controls */
+.form-control, .form-select {
+  background: var(--bg-input);
+  border-color: var(--border-color);
+  color: var(--text-main);
+}
+.form-control:focus, .form-select:focus {
+  background: var(--bg-input);
+  border-color: var(--accent);
+  color: var(--text-main);
+  box-shadow: 0 0 0 0.2rem rgba(99, 102, 241, 0.15);
+}
+.form-control::placeholder {
+  color: var(--text-dim);
+}
+
+/* Cards */
+.card {
+  background: var(--bg-panel);
+  border-color: var(--border-color);
+  color: var(--text-main);
+}
+.card-header {
+  background: var(--bg-input);
+  border-bottom-color: var(--border-color);
+  color: var(--text-main);
+}
+
+/* Tables */
+.table {
+  color: var(--text-main);
+  --bs-table-bg: transparent;
+  --bs-table-border-color: var(--border-color);
+}
+
+/* Alerts */
+.alert {
+  border-color: var(--border-color);
+}
+
+/* Buttons outline */
+.btn-outline-secondary {
+  color: var(--text-dim);
+  border-color: var(--border-color);
+}
+.btn-outline-secondary:hover {
+  background: var(--bg-input);
+  color: var(--text-main);
+  border-color: var(--text-dim);
+}
+
+/* Close buttons */
+.btn-close {
+  filter: var(--btn-close-filter, invert(1));
+}
+[data-bs-theme="light"] .btn-close {
+  filter: none;
+}
+
+/* Scrollbar (global) */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-input); }
+::-webkit-scrollbar-thumb { background: var(--text-dim); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+/* Users panel */
+.users-panel h5 { color: var(--text-main); }

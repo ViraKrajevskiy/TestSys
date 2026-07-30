@@ -51,8 +51,8 @@ const Generator = (() => {
     modal.tabIndex = "-1";
     modal.innerHTML = `
       <div class="modal-dialog modal-xl">
-        <div class="modal-content bg-dark text-white">
-          <div class="modal-header border-secondary">
+        <div class="modal-content theme-modal-content">
+          <div class="modal-header border-0" style="border-bottom:1px solid var(--border-color) !important">
             <h5 class="modal-title">
               <i class="bi bi-shuffle me-2"></i>
               <strong>Test Data Generator</strong>
@@ -67,7 +67,7 @@ const Generator = (() => {
             <div class="row g-3">
               <!-- LEFT: Settings -->
               <div class="col-lg-3">
-                <div class="card bg-secondary">
+                <div class="card" style="background:var(--bg-input);border-color:var(--border-color)">
                   <div class="card-header">
                     <h6 class="mb-0">⚙️ Settings</h6>
                   </div>
@@ -125,7 +125,7 @@ rejected</textarea>
                 </div>
 
                 <!-- Preview -->
-                <div class="card bg-secondary">
+                <div class="card" style="background:var(--bg-input);border-color:var(--border-color)">
                   <div class="card-header">
                     <h6 class="mb-0">📊 Data Preview</h6>
                   </div>
@@ -137,12 +137,18 @@ rejected</textarea>
             </div>
           </div>
 
-          <div class="modal-footer border-secondary">
+          <div class="modal-footer border-0" style="border-bottom:1px solid var(--border-color) !important">
             <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">
               Close
             </button>
             <button type="button" class="btn btn-info btn-sm" id="gen-reload-btn">
               <i class="bi bi-arrow-clockwise me-1"></i> Reload Fields
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" id="gen-copy-json-btn">
+              <i class="bi bi-clipboard me-1"></i> Copy JSON
+            </button>
+            <button type="button" class="btn btn-success btn-sm" id="gen-insert-body-btn">
+              <i class="bi bi-box-arrow-in-down me-1"></i> Insert into Body
             </button>
             <button type="button" class="btn btn-primary btn-sm" id="gen-submit-btn">
               <i class="bi bi-cloud-arrow-up me-1"></i> Validate
@@ -173,6 +179,37 @@ rejected</textarea>
     document.getElementById("gen-submit-btn")?.addEventListener("click", validateData);
     document.getElementById("gen-reload-btn")?.addEventListener("click", detectFormFields);
 
+    // Copy generated JSON to clipboard
+    document.getElementById("gen-copy-json-btn")?.addEventListener("click", () => {
+      const json = JSON.stringify(currentData, null, 2);
+      navigator.clipboard.writeText(json);
+      showNotification("✅ JSON скопирован!", "success");
+    });
+
+    // Insert generated JSON into active tab's body
+    document.getElementById("gen-insert-body-btn")?.addEventListener("click", () => {
+      const json = JSON.stringify(currentData, null, 2);
+      if (!json || json === "{}") {
+        showNotification("Сначала сгенерируй данные!", "warning");
+        return;
+      }
+      const tab = App.getActiveTab();
+      if (!tab) {
+        showNotification("Нет активной вкладки!", "warning");
+        return;
+      }
+      // Ensure method supports body
+      if (!["POST", "PUT", "PATCH"].includes(tab.method)) {
+        tab.method = "POST";
+      }
+      tab.body = json;
+      tab.activeSubTab = "body";
+      // Close modal and re-render
+      closeModal();
+      App.renderTabContent();
+      showNotification("✅ Вставлено в Body!", "success");
+    });
+
     // Settings change listeners
     document.getElementById("gen-text-length")?.addEventListener("change", (e) => {
       settings.textLength = parseInt(e.target.value) || 10;
@@ -183,6 +220,19 @@ rejected</textarea>
     document.getElementById("gen-num-max")?.addEventListener("change", (e) => {
       settings.numberMax = parseInt(e.target.value) || 1000;
     });
+
+    // Очищать застрявшие backdrop-ы при закрытии модалки
+    const modalEl = document.getElementById("generator-modal");
+    if (modalEl) {
+      modalEl.addEventListener("hidden.bs.modal", () => {
+        // Удаляем все оставшиеся backdrop-ы
+        document.querySelectorAll(".modal-backdrop").forEach((el) => el.remove());
+        // Убираем modal-open с body (иначе прокрутка и клики заблокированы)
+        document.body.classList.remove("modal-open");
+        document.body.style.removeProperty("overflow");
+        document.body.style.removeProperty("padding-right");
+      });
+    }
 
     log("✅ Event listeners attached");
   }
@@ -245,7 +295,7 @@ rejected</textarea>
               class="form-control gen-field-input" 
               data-field-id="${config.id}"
               value="${config.value}"
-              style="background: #444; color: #fff; border-color: #666;">
+              style="background:var(--bg-input);color:var(--text-main);border-color:var(--border-color);">
             <button class="btn btn-outline-info btn-sm gen-field-gen-btn" 
               type="button" 
               data-field-id="${config.id}"
@@ -433,18 +483,16 @@ rejected</textarea>
    */
   function log(message, level = "INFO") {
     console.log(`[Generator] ${message}`);
-
-    // Also log to file via pywebview API
-    if (window.pywebview && window.pywebview.api) {
-      window.pywebview.api.log_message(`[Generator] ${message}`, level);
-    }
   }
 
   /**
    * Show modal
    */
   function showModal() {
-    const modal = new bootstrap.Modal(document.getElementById("generator-modal"));
+    const el = document.getElementById("generator-modal");
+    // getOrCreateInstance — НЕ new bootstrap.Modal, иначе плодятся backdrop-ы
+    const modal = bootstrap.Modal.getOrCreateInstance(el);
+    detectFormFields();
     modal.show();
   }
 
@@ -452,7 +500,8 @@ rejected</textarea>
    * Close modal
    */
   function closeModal() {
-    const modal = bootstrap.Modal.getInstance(document.getElementById("generator-modal"));
+    const el = document.getElementById("generator-modal");
+    const modal = bootstrap.Modal.getInstance(el);
     if (modal) modal.hide();
   }
 
