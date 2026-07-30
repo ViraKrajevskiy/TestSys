@@ -30,3 +30,40 @@ App.formatJson = function (text) {
   if (parsed === null) return text;
   return JSON.stringify(parsed, null, 2);
 };
+
+// ============================================================
+// HTTP STATUS CODE MEANINGS
+// ============================================================
+App.STATUS_MEANINGS = {
+  ru: {
+    200: "Успешно", 201: "Создано", 202: "Принято", 204: "Нет содержимого",
+    301: "Перемещено навсегда", 302: "Временное перенаправление", 304: "Не изменялось",
+    400: "Неверный запрос", 401: "Не авторизован", 403: "Доступ запрещён",
+    404: "Не найдено", 405: "Метод не разрешён", 408: "Таймаут запроса",
+    409: "Конфликт", 413: "Тело слишком большое", 415: "Неподдерживаемый формат",
+    422: "Ошибка валидации", 429: "Слишком много запросов",
+    500: "Внутренняя ошибка сервера", 502: "Плохой шлюз",
+    503: "Сервис недоступен", 504: "Таймаут шлюза",
+  },
+  en: {
+    200: "OK", 201: "Created", 202: "Accepted", 204: "No Content",
+    301: "Moved Permanently", 302: "Found", 304: "Not Modified",
+    400: "Bad Request", 401: "Unauthorized", 403: "Forbidden",
+    404: "Not Found", 405: "Method Not Allowed", 408: "Request Timeout",
+    409: "Conflict", 413: "Payload Too Large", 415: "Unsupported Media Type",
+    422: "Unprocessable Entity", 429: "Too Many Requests",
+    500: "Internal Server Error", 502: "Bad Gateway",
+    503: "Service Unavailable", 504: "Gateway Timeout",
+  },
+};
+
+App.statusMeaning = function (code) {
+  const lang = App.getLang ? App.getLang() : "ru";
+  const dict = App.STATUS_MEANINGS[lang] || App.STATUS_MEANINGS.ru;
+  if (dict[code]) return dict[code];
+  // Обобщённо по классу кода
+  const generic = lang === "ru"
+    ? { 2: "Успешно", 3: "Перенаправление", 4: "Ошибка клиента", 5: "Ошибка сервера" }
+    : { 2: "Success", 3: "Redirect", 4: "Client error", 5: "Server error" };
+  return generic[Math.floor(code / 100)] || "";
+};

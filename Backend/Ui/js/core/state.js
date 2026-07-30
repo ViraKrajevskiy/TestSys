@@ -70,7 +70,9 @@ Object.defineProperty(App, "COLLECTIONS", {
 // ============================================================
 App.addCollection = function (name) {
   if (!name || !name.trim()) return null;
-  const col = { name: name.trim(), builtin: false, folders: [] };
+  // Имена уникальны: ключи раскрытия папок строятся как "Коллекция::Папка",
+  // при совпадении имён состояние папок пересекалось бы.
+  const col = { name: _uniqueName(name.trim()), builtin: false, folders: [] };
   App.USER_COLLECTIONS.push(col);
   App.saveCollections();
   App.renderCollections();
@@ -80,10 +82,30 @@ App.addCollection = function (name) {
 App.renameCollection = function (colIdx, newName) {
   const col = App.USER_COLLECTIONS[colIdx];
   if (!col || col.builtin) return;
-  col.name = newName.trim();
+  const oldName = col.name;
+  const wanted = newName.trim();
+  if (!wanted || wanted === oldName) return;
+  // Исключаем саму себя из проверки уникальности
+  const others = App.COLLECTIONS.filter(c => c !== col).map(c => c.name);
+  let unique = wanted, i = 2;
+  while (others.includes(unique)) unique = `${wanted} (${i++})`;
+  col.name = unique;
+  // Ключи раскрытых папок содержат имя коллекции — переносим,
+  // иначе после переименования все папки схлопываются.
+  _renameFolderKeys(oldName, col.name);
   App.saveCollections();
   App.renderCollections();
 };
+
+function _renameFolderKeys(oldCol, newCol) {
+  const ex = App.state.expandedFolders;
+  Object.keys(ex).forEach((k) => {
+    if (k.startsWith(oldCol + "::")) {
+      ex[newCol + "::" + k.slice(oldCol.length + 2)] = ex[k];
+      delete ex[k];
+    }
+  });
+}
 
 App.deleteCollection = function (colIdx) {
   const col = App.USER_COLLECTIONS[colIdx];
@@ -95,17 +117,38 @@ App.deleteCollection = function (colIdx) {
 
 App.addFolder = function (col, folderName) {
   if (!folderName || !folderName.trim() || col.builtin) return;
-  col.folders.push({ name: folderName.trim(), entity: null, items: [] });
+  const name = _uniqueFolderName(col, folderName.trim());
+  col.folders.push({ name, entity: null, items: [] });
+  App.state.expandedFolders[col.name + "::" + name] = true;  // новая папка открыта
   App.saveCollections();
   App.renderCollections();
 };
 
 App.renameFolder = function (col, folderIdx, newName) {
   if (col.builtin) return;
-  col.folders[folderIdx].name = newName.trim();
+  const folder = col.folders[folderIdx];
+  if (!folder) return;
+  const oldKey = col.name + "::" + folder.name;
+  folder.name = _uniqueFolderName(col, newName.trim(), folderIdx);
+  const newKey = col.name + "::" + folder.name;
+  if (oldKey in App.state.expandedFolders) {
+    App.state.expandedFolders[newKey] = App.state.expandedFolders[oldKey];
+    delete App.state.expandedFolders[oldKey];
+  }
   App.saveCollections();
   App.renderCollections();
 };
+
+/** Папки внутри коллекции не должны дублироваться — иначе путаются ключи раскрытия */
+function _uniqueFolderName(col, name, skipIdx) {
+  const taken = col.folders
+    .filter((_, i) => i !== skipIdx)
+    .map(f => f.name);
+  if (!taken.includes(name)) return name;
+  let i = 2;
+  while (taken.includes(`${name} (${i})`)) i++;
+  return `${name} (${i})`;
+}
 
 App.deleteFolder = function (col, folderIdx) {
   if (col.builtin) return;
@@ -135,11 +178,28 @@ App.deleteRequest = function (folder, itemIdx) {
 // ============================================================
 // SAVE / LOAD COLLECTIONS
 // ============================================================
+let _syncPushTimer = null;
+
 App.saveCollections = async function () {
   if (window.pywebview && window.pywebview.api) {
     try {
-      await window.pywebview.api.save_collections(JSON.stringify(App.USER_COLLECTIONS));
+      // Сохраняем коллекции ВМЕСТЕ с переменными — раньше переменные жили
+      // только в памяти и терялись при перезапуске.
+      const payload = {
+        version: 2,
+        collections: App.USER_COLLECTIONS.map(c => ({ name: c.name, folders: c.folders })),
+        variables: App.VARIABLES,
+      };
+      await window.pywebview.api.save_collections(JSON.stringify(payload));
     } catch (e) { console.warn("[Collections] save error:", e); }
+  }
+
+  // Автоотправка в общий доступ (с задержкой, чтобы не спамить при серии правок)
+  if (App.getSetting && App.getSetting("syncMode") !== "local" && App.syncPush) {
+    clearTimeout(_syncPushTimer);
+    _syncPushTimer = setTimeout(() => {
+      App.syncPushWithConflictUI ? App.syncPushWithConflictUI() : App.syncPush();
+    }, 1200);
   }
 };
 
@@ -156,23 +216,182 @@ App.loadCollections = async function () {
   if (!api) return;
   try {
     const raw = await api.load_collections();
-    if (raw) {
-      App.USER_COLLECTIONS = JSON.parse(raw);
-      App.USER_COLLECTIONS.forEach(c => c.builtin = false);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+
+    if (Array.isArray(data)) {
+      // Старый формат — голый массив коллекций (без переменных)
+      App.USER_COLLECTIONS = data;
+    } else if (data && Array.isArray(data.collections)) {
+      // Новый формат: {collections, variables}
+      App.USER_COLLECTIONS = data.collections;
+      if (data.variables && typeof data.variables === "object") {
+        // Сохранённые переменные имеют приоритет, дефолтные остаются как запасные
+        App.VARIABLES = Object.assign({}, App.VARIABLES, data.variables);
+      }
+    } else {
+      return;
     }
+    App.USER_COLLECTIONS.forEach(c => { c.builtin = false; c.folders = c.folders || []; });
   } catch (e) { console.warn("[Collections] load error:", e); }
 };
+
+// ============================================================
+// EXPORT / IMPORT COLLECTIONS
+// ============================================================
+App.COLLECTION_FORMAT_VERSION = 1;
+
+/** Собрать объект для экспорта. col = null → экспорт всех пользовательских коллекций */
+App.buildExportPayload = function (col) {
+  return {
+    testsys_collection: App.COLLECTION_FORMAT_VERSION,
+    exported_at: new Date().toISOString(),
+    variables: Object.assign({}, App.VARIABLES),
+    collections: col ? [_stripCollection(col)] : App.USER_COLLECTIONS.map(_stripCollection),
+  };
+};
+
+function _stripCollection(c) {
+  return { name: c.name, folders: JSON.parse(JSON.stringify(c.folders || [])) };
+}
+
+/** Экспорт: col = объект коллекции или null (все) */
+App.exportCollections = async function (col) {
+  const payload = App.buildExportPayload(col);
+  const json = JSON.stringify(payload, null, 2);
+  const filename = (col ? col.name.replace(/[^\w\-]+/g, "_") : "testsys_collections") + ".json";
+
+  // Через pywebview — нативный диалог сохранения
+  if (window.pywebview?.api?.export_collection_file) {
+    const res = await window.pywebview.api.export_collection_file(filename, json);
+    if (res?.ok) return { ok: true, path: res.path };
+    if (res?.cancelled) return { ok: false, cancelled: true };
+    return { ok: false, error: res?.error || "Ошибка экспорта" };
+  }
+
+  // Fallback — скачивание через браузер
+  const blob = new Blob([json], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  return { ok: true };
+};
+
+/** Разбор содержимого файла → массив коллекций */
+App.parseImportPayload = function (raw) {
+  let data;
+  try { data = JSON.parse(raw); }
+  catch (e) { return { ok: false, error: "Файл не является валидным JSON" }; }
+
+  let cols = [];
+  let vars = null;
+
+  if (data && Array.isArray(data.collections)) {
+    cols = data.collections;
+    vars = data.variables || null;
+  } else if (Array.isArray(data)) {
+    cols = data;                     // голый массив коллекций
+  } else if (data && data.name && Array.isArray(data.folders)) {
+    cols = [data];                   // одна коллекция без обёртки
+  } else {
+    return { ok: false, error: "Не распознан формат файла коллекции" };
+  }
+
+  // Валидация структуры
+  const valid = cols.filter(c => c && typeof c.name === "string" && Array.isArray(c.folders));
+  if (!valid.length) return { ok: false, error: "В файле нет корректных коллекций" };
+
+  return { ok: true, collections: valid, variables: vars };
+};
+
+/** Импорт: добавляет коллекции, разрешая конфликты имён */
+App.importCollections = async function (opts) {
+  const mergeVars = opts && opts.mergeVariables;
+  let raw = opts && opts.raw;
+
+  if (!raw) {
+    if (window.pywebview?.api?.import_collection_file) {
+      const res = await window.pywebview.api.import_collection_file();
+      if (res?.cancelled) return { ok: false, cancelled: true };
+      if (!res?.ok) return { ok: false, error: res?.error || "Ошибка чтения файла" };
+      raw = res.content;
+    } else {
+      return { ok: false, error: "Диалог файлов недоступен" };
+    }
+  }
+
+  const parsed = App.parseImportPayload(raw);
+  if (!parsed.ok) return parsed;
+
+  const added = [];
+  parsed.collections.forEach((c) => {
+    const col = { name: _uniqueName(c.name), builtin: false, folders: c.folders };
+    App.USER_COLLECTIONS.push(col);
+    added.push(col.name);
+  });
+
+  if (mergeVars && parsed.variables) {
+    Object.entries(parsed.variables).forEach(([k, v]) => {
+      if (!(k in App.VARIABLES)) App.VARIABLES[k] = v;
+    });
+  }
+
+  App.saveCollections();
+  App.renderCollections();
+  return { ok: true, added };
+};
+
+function _uniqueName(name) {
+  const taken = App.COLLECTIONS.map(c => c.name);
+  if (!taken.includes(name)) return name;
+  let i = 2;
+  while (taken.includes(`${name} (${i})`)) i++;
+  return `${name} (${i})`;
+}
 
 // ============================================================
 // METRICS HISTORY
 // ============================================================
 App.metricsHistory = [];
-App.METRICS_MAX = 200;
+App.METRICS_MAX = 500;          // переопределяется настройкой maxMetrics
+
+let _metricsSaveTimer = null;
 
 App.recordMetric = function (entry) {
   // entry: {method, url, status, elapsed_ms, size, timestamp, ok}
   App.metricsHistory.push(entry);
-  if (App.metricsHistory.length > App.METRICS_MAX) App.metricsHistory.shift();
+  const limit = App.METRICS_MAX || 500;
+  while (App.metricsHistory.length > limit) App.metricsHistory.shift();
+
+  // Пишем на диск с задержкой — иначе серия запросов устроит шторм записей
+  clearTimeout(_metricsSaveTimer);
+  _metricsSaveTimer = setTimeout(App.saveMetrics, 1500);
+};
+
+App.saveMetrics = async function () {
+  if (!(window.pywebview && window.pywebview.api && window.pywebview.api.save_metrics)) return;
+  try {
+    await window.pywebview.api.save_metrics(JSON.stringify(App.metricsHistory));
+  } catch (e) { console.warn("[Metrics] save error:", e); }
+};
+
+App.loadMetrics = async function () {
+  if (!(window.pywebview && window.pywebview.api && window.pywebview.api.load_metrics)) return;
+  try {
+    const raw = await window.pywebview.api.load_metrics();
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (Array.isArray(data)) {
+      App.metricsHistory = data.slice(-(App.METRICS_MAX || 500));
+    }
+  } catch (e) { console.warn("[Metrics] load error:", e); }
+};
+
+App.clearMetrics = async function () {
+  App.metricsHistory = [];
+  await App.saveMetrics();
 };
 
 // ============================================================
@@ -185,6 +404,7 @@ App.METHOD_COLOR_VAR = {
   PATCH: "--method-patch",
   DELETE: "--method-delete",
   USERS: "--method-post",
+  RANDOMIZER: "--accent",
 };
 
 App.USER_FIELDS = [

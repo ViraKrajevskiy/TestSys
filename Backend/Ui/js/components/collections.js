@@ -13,8 +13,8 @@ window.App = window.App || {};
     varsBlock.className = "sidebar-vars mb-3";
     varsBlock.innerHTML = `
       <div class="sidebar-section-title d-flex justify-content-between align-items-center">
-        Variables
-        <button class="btn btn-sm p-0 border-0" id="add-variable-btn" title="Добавить переменную" style="color:var(--accent);font-size:14px;background:none;">
+        ${App.t("variables")}
+        <button class="btn btn-sm p-0 border-0" id="add-variable-btn" title="${App.t("addVariable")}" style="color:var(--accent);font-size:14px;background:none;">
           <i class="bi bi-plus-lg"></i>
         </button>
       </div>`;
@@ -24,35 +24,92 @@ window.App = window.App || {};
       row.innerHTML =
         '<span class="var-key">{{' + key + "}}</span>" +
         '<input type="text" class="form-control form-control-sm var-value" data-var-key="' + key + '" value="' + App.escapeAttr(App.VARIABLES[key]) + '">' +
-        '<button class="btn btn-sm p-0 border-0 var-delete-btn" data-var-key="' + key + '" title="Удалить" style="color:var(--text-dim);font-size:12px;"><i class="bi bi-x"></i></button>';
+        '<button class="btn btn-sm p-0 border-0 var-delete-btn" data-var-key="' + key + '" title="' + App.t("delete") + '" style="color:var(--text-dim);font-size:12px;"><i class="bi bi-x"></i></button>';
+
+      // Значение переменной — сохраняем на диск, иначе терялось при перезапуске
       row.querySelector(".var-value").addEventListener("change", (e) => {
         App.VARIABLES[key] = e.target.value;
+        App.saveCollections();
       });
-      row.querySelector(".var-delete-btn").addEventListener("click", () => {
+
+      row.querySelector(".var-delete-btn").addEventListener("click", async () => {
+        const ok = await App.showConfirm({
+          title: App.t("delete"),
+          message: `{{${key}}} — ${App.t("delete")}?`,
+          okText: App.t("delete"), danger: true,
+        });
+        if (!ok) return;
         delete App.VARIABLES[key];
+        App.saveCollections();
         App.renderCollections();
       });
       varsBlock.appendChild(row);
     });
-    varsBlock.querySelector("#add-variable-btn").addEventListener("click", () => {
-      const name = prompt("Имя переменной:");
-      if (!name || !name.trim()) return;
-      const k = name.trim().replace(/[{}]/g, "");
+    varsBlock.querySelector("#add-variable-btn").addEventListener("click", async () => {
+      const name = await App.showPrompt({
+        title: App.t("addVariable"),
+        label: App.t("variableName"),
+        placeholder: "baseUrl",
+      });
+      if (!name) return;
+      const k = name.replace(/[{}]/g, "").trim();
+      if (!k) return;
+      if (k in App.VARIABLES) {
+        App.showAlert(`{{${k}}} — ${App.t("varExists")}`);
+        return;
+      }
       App.VARIABLES[k] = "";
+      App.saveCollections();
       App.renderCollections();
     });
     root.appendChild(varsBlock);
 
-    // --- "Add Collection" button ---
-    const addColBtn = document.createElement("button");
-    addColBtn.className = "btn btn-sm w-100 mb-2";
-    addColBtn.style.cssText = "color:var(--accent);border:1px dashed var(--border-color);font-size:12px;background:transparent;";
-    addColBtn.innerHTML = '<i class="bi bi-plus-lg me-1"></i> New Collection';
-    addColBtn.addEventListener("click", () => {
-      const name = prompt("Имя коллекции:");
+    // --- Toolbar: New / Import / Export All ---
+    const toolbar = document.createElement("div");
+    toolbar.className = "d-flex gap-1 mb-2";
+    toolbar.innerHTML = `
+      <button class="btn btn-sm flex-grow-1" id="new-collection-btn"
+        style="color:var(--accent);border:1px dashed var(--border-color);font-size:12px;background:transparent;">
+        <i class="bi bi-plus-lg me-1"></i> ${App.t("newCollection")}
+      </button>
+      <button class="btn btn-sm" id="import-collection-btn" title="${App.t("importCollection")}"
+        style="color:var(--text-dim);border:1px dashed var(--border-color);font-size:12px;background:transparent;">
+        <i class="bi bi-box-arrow-in-down"></i>
+      </button>
+      <button class="btn btn-sm" id="export-all-btn" title="${App.t("exportAll")}"
+        style="color:var(--text-dim);border:1px dashed var(--border-color);font-size:12px;background:transparent;">
+        <i class="bi bi-box-arrow-up"></i>
+      </button>
+      <button class="btn btn-sm" id="import-swagger-btn" title="${App.t("importSwagger")}"
+        style="color:var(--accent);border:1px dashed var(--border-color);font-size:12px;background:transparent;">
+        <i class="bi bi-file-earmark-code"></i>
+      </button>`;
+
+    toolbar.querySelector("#new-collection-btn").addEventListener("click", async () => {
+      const name = await App.showPrompt({
+        title: App.t("newCollection"),
+        label: App.t("collectionName"),
+        placeholder: "My API",
+      });
       if (name) App.addCollection(name);
     });
-    root.appendChild(addColBtn);
+
+    toolbar.querySelector("#import-collection-btn").addEventListener("click", async () => {
+      const res = await App.importCollections({ mergeVariables: true });
+      if (res.cancelled) return;
+      if (res.ok) App.showAlert(App.t("importCollection") + ": " + res.added.join(", "));
+      else App.showAlert(App.t("error") + ": " + res.error);
+    });
+
+    toolbar.querySelector("#export-all-btn").addEventListener("click", async () => {
+      if (!App.USER_COLLECTIONS.length) { App.showAlert(App.t("exportAll") + " — " + App.t("none")); return; }
+      const res = await App.exportCollections(null);
+      if (res.cancelled) return;
+      if (res.ok) App.showAlert(res.path || "OK");
+      else App.showAlert(App.t("error") + ": " + res.error);
+    });
+
+    root.appendChild(toolbar);
 
     // --- Collections ---
     App.COLLECTIONS.forEach((collection, colGlobalIdx) => {
@@ -67,32 +124,56 @@ window.App = window.App || {};
       colTitle.className = "collection-group-title d-flex justify-content-between align-items-center";
       colTitle.innerHTML = '<span>' + App.escapeHtml(collection.name) + '</span>';
 
-      if (isUser) {
-        const actions = document.createElement("div");
-        actions.style.cssText = "display:flex;gap:2px;";
-        actions.innerHTML = `
-          <button class="btn btn-sm p-0 border-0" title="Добавить папку" style="color:var(--accent);font-size:12px;background:none;"><i class="bi bi-folder-plus"></i></button>
-          <button class="btn btn-sm p-0 border-0" title="Переименовать" style="color:var(--text-dim);font-size:12px;background:none;"><i class="bi bi-pencil"></i></button>
-          <button class="btn btn-sm p-0 border-0" title="Удалить" style="color:var(--text-dim);font-size:12px;background:none;"><i class="bi bi-trash3"></i></button>`;
-        const [addFolderBtn, renameBtn, deleteBtn] = actions.querySelectorAll("button");
+      const actions = document.createElement("div");
+      actions.className = "row-actions";
 
-        addFolderBtn.addEventListener("click", (e) => {
+      // Экспорт доступен для любой коллекции (включая встроенную)
+      const exportBtn = document.createElement("button");
+      exportBtn.className = "btn btn-sm p-0 border-0";
+      exportBtn.title = App.t("exportOne");
+      exportBtn.style.cssText = "color:var(--text-dim);font-size:12px;background:none;";
+      exportBtn.innerHTML = '<i class="bi bi-box-arrow-up"></i>';
+      exportBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const res = await App.exportCollections(collection);
+        if (res.cancelled) return;
+        if (res.ok) App.showAlert(res.path || "OK");
+        else App.showAlert(App.t("error") + ": " + res.error);
+      });
+      actions.appendChild(exportBtn);
+
+      if (isUser) {
+        const userActions = document.createElement("div");
+        userActions.innerHTML = `
+          <button class="btn btn-sm p-0 border-0" title="${App.t("addFolder")}" style="color:var(--accent);font-size:12px;background:none;"><i class="bi bi-folder-plus"></i></button>
+          <button class="btn btn-sm p-0 border-0" title="${App.t("rename")}" style="color:var(--text-dim);font-size:12px;background:none;"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-sm p-0 border-0" title="${App.t("delete")}" style="color:var(--text-dim);font-size:12px;background:none;"><i class="bi bi-trash3"></i></button>`;
+        const [addFolderBtn, renameBtn, deleteBtn] = userActions.querySelectorAll("button");
+
+        addFolderBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
-          const n = prompt("Имя папки:");
+          const n = await App.showPrompt({ title: App.t("addFolder"), label: App.t("folderName") });
           if (n) App.addFolder(collection, n);
         });
-        renameBtn.addEventListener("click", (e) => {
+        renameBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
-          const n = prompt("Новое имя:", collection.name);
+          const n = await App.showPrompt({ title: App.t("rename"), label: App.t("newName"), value: collection.name });
           if (n) App.renameCollection(userIdx, n);
         });
-        deleteBtn.addEventListener("click", (e) => {
+        deleteBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
-          if (confirm('Удалить коллекцию "' + collection.name + '"?')) App.deleteCollection(userIdx);
+          const ok = await App.showConfirm({
+            title: App.t("delete"),
+            message: `"${collection.name}" — ${App.t("delete")}?`,
+            okText: App.t("delete"), danger: true,
+          });
+          if (ok) App.deleteCollection(userIdx);
         });
 
-        colTitle.appendChild(actions);
+        while (userActions.firstChild) actions.appendChild(userActions.firstChild);
       }
+
+      colTitle.appendChild(actions);
       colEl.appendChild(colTitle);
 
       // Folders
@@ -114,25 +195,30 @@ window.App = window.App || {};
 
         if (isUser) {
           const fActions = document.createElement("div");
-          fActions.style.cssText = "display:flex;gap:2px;";
+          fActions.className = "row-actions";
           fActions.innerHTML = `
-            <button class="btn btn-sm p-0 border-0" title="Добавить запрос" style="color:var(--accent);font-size:11px;background:none;"><i class="bi bi-plus-lg"></i></button>
-            <button class="btn btn-sm p-0 border-0" title="Переименовать" style="color:var(--text-dim);font-size:11px;background:none;"><i class="bi bi-pencil"></i></button>
-            <button class="btn btn-sm p-0 border-0" title="Удалить" style="color:var(--text-dim);font-size:11px;background:none;"><i class="bi bi-trash3"></i></button>`;
+            <button class="btn btn-sm p-0 border-0" title="${App.t("addRequest")}" style="color:var(--accent);font-size:11px;background:none;"><i class="bi bi-plus-lg"></i></button>
+            <button class="btn btn-sm p-0 border-0" title="${App.t("rename")}" style="color:var(--text-dim);font-size:11px;background:none;"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-sm p-0 border-0" title="${App.t("delete")}" style="color:var(--text-dim);font-size:11px;background:none;"><i class="bi bi-trash3"></i></button>`;
           const [addReqBtn, renameFolderBtn, deleteFolderBtn] = fActions.querySelectorAll("button");
 
           addReqBtn.addEventListener("click", (e) => {
             e.stopPropagation();
-            _showRequestEditor(folder, -1, collection);
+            _editRequestDialog(folder, -1);
           });
-          renameFolderBtn.addEventListener("click", (e) => {
+          renameFolderBtn.addEventListener("click", async (e) => {
             e.stopPropagation();
-            const n = prompt("Новое имя папки:", folder.name);
+            const n = await App.showPrompt({ title: App.t("rename"), label: App.t("newFolderName"), value: folder.name });
             if (n) App.renameFolder(collection, folderIdx, n);
           });
-          deleteFolderBtn.addEventListener("click", (e) => {
+          deleteFolderBtn.addEventListener("click", async (e) => {
             e.stopPropagation();
-            if (confirm('Удалить папку "' + folder.name + '"?')) App.deleteFolder(collection, folderIdx);
+            const ok = await App.showConfirm({
+              title: App.t("delete"),
+              message: `"${folder.name}" — ${App.t("delete")}?`,
+              okText: App.t("delete"), danger: true,
+            });
+            if (ok) App.deleteFolder(collection, folderIdx);
           });
 
           folderHeader.appendChild(fActions);
@@ -168,6 +254,8 @@ window.App = window.App || {};
               headers: [{ key: "Content-Type", value: "application/json" }],
               crudEntity: folder.entity || null,
               crudAction: entry.crud || null,
+              // Метаданные полей из Swagger — рандомайзер возьмёт типы отсюда
+              schema: entry.schema || null,
             };
             if (entry.body) { overrides.body = entry.body; overrides.activeSubTab = "body"; }
             if (["POST", "PUT", "PATCH"].includes(entry.method)) overrides.activeSubTab = "body";
@@ -180,18 +268,23 @@ window.App = window.App || {};
 
           if (isUser) {
             const iActions = document.createElement("div");
-            iActions.style.cssText = "display:flex;gap:1px;flex-shrink:0;";
+            iActions.className = "row-actions";
             iActions.innerHTML = `
-              <button class="btn btn-sm p-0 border-0" title="Редактировать" style="color:var(--text-dim);font-size:10px;background:none;"><i class="bi bi-pencil"></i></button>
-              <button class="btn btn-sm p-0 border-0" title="Удалить" style="color:var(--text-dim);font-size:10px;background:none;"><i class="bi bi-trash3"></i></button>`;
+              <button class="btn btn-sm p-0 border-0" title="${App.t("edit")}" style="color:var(--text-dim);font-size:10px;background:none;"><i class="bi bi-pencil"></i></button>
+              <button class="btn btn-sm p-0 border-0" title="${App.t("delete")}" style="color:var(--text-dim);font-size:10px;background:none;"><i class="bi bi-trash3"></i></button>`;
             const [editBtn, delBtn] = iActions.querySelectorAll("button");
             editBtn.addEventListener("click", (e) => {
               e.stopPropagation();
-              _showRequestEditor(folder, itemIdx, collection);
+              _editRequestDialog(folder, itemIdx);
             });
-            delBtn.addEventListener("click", (e) => {
+            delBtn.addEventListener("click", async (e) => {
               e.stopPropagation();
-              if (confirm('Удалить "' + entry.name + '"?')) App.deleteRequest(folder, itemIdx);
+              const ok = await App.showConfirm({
+                title: App.t("delete"),
+                message: `"${entry.name}" — ${App.t("delete")}?`,
+                okText: App.t("delete"), danger: true,
+              });
+              if (ok) App.deleteRequest(folder, itemIdx);
             });
             el.appendChild(iActions);
           }
@@ -208,41 +301,14 @@ window.App = window.App || {};
   };
 
   // ============================================================
-  // REQUEST EDITOR MODAL (inline)
+  // REQUEST EDITOR — одна модалка со всеми полями
   // ============================================================
-  function _showRequestEditor(folder, itemIdx, collection) {
+  async function _editRequestDialog(folder, itemIdx) {
     const isEdit = itemIdx >= 0;
     const existing = isEdit ? folder.items[itemIdx] : null;
-
-    const name = prompt(
-      isEdit ? "Имя запроса:" : "Имя нового запроса:",
-      existing ? existing.name : "New Request"
-    );
-    if (!name) return;
-
-    const method = prompt("Метод (GET/POST/PUT/PATCH/DELETE):", existing ? existing.method : "GET");
-    if (!method) return;
-    const m = method.trim().toUpperCase();
-    if (!["GET","POST","PUT","PATCH","DELETE"].includes(m)) { alert("Неверный метод!"); return; }
-
-    const url = prompt("URL:", existing ? existing.url : "https://");
-    if (!url) return;
-
-    const entry = {
-      method: m,
-      name: name.trim(),
-      url: url.trim(),
-    };
-
-    if (["POST","PUT","PATCH"].includes(m)) {
-      const body = prompt("Body (JSON, пусто = без body):", existing ? existing.body || "" : "");
-      if (body) entry.body = body;
-    }
-
-    if (isEdit) {
-      App.editRequest(folder, itemIdx, entry);
-    } else {
-      App.addRequest(folder, entry);
-    }
+    const entry = await App.showRequestEditor(existing);
+    if (!entry) return;
+    if (isEdit) App.editRequest(folder, itemIdx, entry);
+    else App.addRequest(folder, entry);
   }
 })();

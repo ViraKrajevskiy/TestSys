@@ -5,12 +5,19 @@ window.App = window.App || {};
   // DEFAULT SETTINGS
   // ============================================================
   const DEFAULTS = {
+    // Язык интерфейса
+    language: "ru",
+
     // Подключение
     apiBaseUrl: "http://127.0.0.1:8000",
 
     // Логирование
     loggingEnabled: true,
     logLevel: "info",       // "debug" | "info" | "warn" | "error" | "off"
+    maxLogFileMB: 5,        // размер файла до ротации
+    logBackupCount: 3,      // сколько архивов хранить
+    maxLogEntries: 500,     // записей в памяти
+    maxMetrics: 500,        // записей истории метрик
 
     // Лимиты
     maxTabs: 20,
@@ -21,6 +28,18 @@ window.App = window.App || {};
     maxResponseDisplayKB: 1000,  // КБ — обрезка в UI
     requestTimeoutSec: 30,
     sidebarWidth: 240,
+
+    // Рандомайзер: "floating" — панель внутри окна, "window" — отдельное окно ОС
+    randomizerMode: "floating",
+
+    // Синхронизация коллекций: local | folder | host | client
+    syncMode: "local",
+    syncClientName: "",
+    syncFolderPath: "",
+    syncHostPort: 8777,
+    syncHostToken: "",
+    syncRemoteUrl: "",
+    syncRemoteToken: "",
   };
 
   let _settings = Object.assign({}, DEFAULTS);
@@ -30,6 +49,14 @@ window.App = window.App || {};
   // ============================================================
   function applySettings(s) {
     _settings = Object.assign({}, DEFAULTS, s);
+
+    // Язык интерфейса.
+    // Сравниваем с РЕАЛЬНО применённым языком (App.getLang()), а не с прошлым
+    // значением _settings — readForm() пишет туда новый язык до вызова сюда,
+    // из-за чего сравнение всегда давало «не изменилось».
+    if (App.setLang && App.getLang && App.getLang() !== _settings.language) {
+      App.setLang(_settings.language);
+    }
 
     // Обновить лимиты
     App.LIMITS.MAX_TABS             = _settings.maxTabs;
@@ -42,17 +69,23 @@ window.App = window.App || {};
     // Обновить API_BASE в state
     App.VARIABLES.baseUrl = _settings.apiBaseUrl;
 
-    // Логирование: переопределяем console если выключено
-    if (!_settings.loggingEnabled || _settings.logLevel === "off") {
-      window._originalConsole = window._originalConsole || {
-        log: console.log, warn: console.warn, debug: console.debug, info: console.info
-      };
-      console.log = console.debug = console.info = console.warn = function () {};
-    } else if (window._originalConsole) {
-      console.log = window._originalConsole.log;
-      console.warn = window._originalConsole.warn;
-      console.debug = window._originalConsole.debug;
-      console.info = window._originalConsole.info;
+    // Логирование: глушим только ВЫВОД в консоль.
+    // Запись ошибок в лог продолжается всегда — иначе нечего будет показать
+    // в просмотрщике, когда что-то сломается.
+    const silenced = !_settings.loggingEnabled || _settings.logLevel === "off";
+    App.setConsoleSilenced && App.setConsoleSilenced(silenced);
+    App.setLogLevel && App.setLogLevel(_settings.logLevel);
+
+    // Лимиты хранения: буфер в памяти, история метрик и ротация файла
+    App.setLogMaxEntries && App.setLogMaxEntries(_settings.maxLogEntries);
+    App.METRICS_MAX = _settings.maxMetrics;
+    if (App.metricsHistory && App.metricsHistory.length > App.METRICS_MAX) {
+      App.metricsHistory = App.metricsHistory.slice(-App.METRICS_MAX);
+    }
+    if (window.pywebview?.api?.configure_log_rotation) {
+      window.pywebview.api.configure_log_rotation(
+        _settings.maxLogFileMB, _settings.logBackupCount
+      ).catch(() => {});
     }
   }
 
@@ -77,6 +110,12 @@ window.App = window.App || {};
     } catch (e) {
       console.warn("[Settings] load error:", e);
     }
+  };
+
+  /** Публичный метод: сохранить произвольный объект настроек (для sync-модуля) */
+  App.saveSettingsObject = async function (obj) {
+    _settings = Object.assign({}, _settings, obj || {});
+    await saveSettings();
   };
 
   async function saveSettings() {
@@ -111,21 +150,37 @@ window.App = window.App || {};
       <div class="modal-dialog modal-lg">
         <div class="modal-content theme-modal-content">
           <div class="modal-header">
-            <h5 class="modal-title"><i class="bi bi-gear me-2"></i>Настройки проекта</h5>
+            <h5 class="modal-title"><i class="bi bi-gear me-2"></i><span data-i18n="settings">Настройки проекта</span></h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body">
 
+            <!-- LANGUAGE -->
+            <div class="mb-4">
+              <h6 style="color:var(--accent);font-size:13px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">
+                <i class="bi bi-translate me-1"></i> <span data-i18n="language">Язык</span>
+              </h6>
+              <div class="mb-2">
+                <label class="form-label" style="font-size:12px;" data-i18n="interfaceLanguage">Язык интерфейса</label>
+                <select class="form-select form-select-sm" id="set-language">
+                  <option value="ru">Русский</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+            </div>
+
+            <hr style="border-color:var(--border-color);">
+
             <!-- CONNECTION -->
             <div class="mb-4">
               <h6 style="color:var(--accent);font-size:13px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">
-                <i class="bi bi-globe me-1"></i> Подключение
+                <i class="bi bi-globe me-1"></i> <span data-i18n="connection">Подключение</span>
               </h6>
               <div class="mb-2">
                 <label class="form-label" style="font-size:12px;">API Base URL</label>
                 <input type="text" class="form-control form-control-sm" id="set-api-url"
                   placeholder="http://127.0.0.1:8000">
-                <div class="form-text" style="font-size:10px;">Адрес FastAPI бэкенда. По умолчанию localhost:8000</div>
+                <div class="form-text" style="font-size:10px;" data-i18n="apiUrlHint">Адрес FastAPI бэкенда. По умолчанию localhost:8000</div>
               </div>
             </div>
 
@@ -134,23 +189,72 @@ window.App = window.App || {};
             <!-- LOGGING -->
             <div class="mb-4">
               <h6 style="color:var(--accent);font-size:13px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">
-                <i class="bi bi-journal-text me-1"></i> Логирование
+                <i class="bi bi-journal-text me-1"></i> <span data-i18n="logging">Логирование</span>
               </h6>
               <div class="d-flex align-items-center gap-3 mb-2">
                 <div class="form-check form-switch">
                   <input class="form-check-input" type="checkbox" id="set-logging-enabled">
-                  <label class="form-check-label" for="set-logging-enabled" style="font-size:12px;">Включить логирование</label>
+                  <label class="form-check-label" for="set-logging-enabled" style="font-size:12px;" data-i18n="enableLogging">Включить логирование</label>
                 </div>
               </div>
               <div class="mb-2">
-                <label class="form-label" style="font-size:12px;">Уровень логов</label>
+                <label class="form-label" style="font-size:12px;" data-i18n="logLevel">Уровень логов</label>
                 <select class="form-select form-select-sm" id="set-log-level">
-                  <option value="debug">Debug (всё)</option>
+                  <option value="debug">Debug</option>
                   <option value="info">Info</option>
                   <option value="warn">Warn</option>
-                  <option value="error">Error (только ошибки)</option>
-                  <option value="off">Выключено</option>
+                  <option value="error">Error</option>
+                  <option value="off">Off</option>
                 </select>
+              </div>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1" id="open-log-viewer" style="font-size:12px;">
+                  <i class="bi bi-card-list me-1"></i><span data-i18n="viewLogs">Просмотреть логи и ошибки</span>
+                  <span id="settings-error-hint" style="color:#dc3545;margin-left:6px;"></span>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-danger" id="settings-clear-log" style="font-size:12px;white-space:nowrap;">
+                  <i class="bi bi-trash3 me-1"></i><span data-i18n="clearLogs">Очистить логи</span>
+                </button>
+              </div>
+              <div id="settings-log-size" style="font-size:10px;color:var(--text-dim);margin-top:4px;"></div>
+
+              <div class="row g-2 mt-1">
+                <div class="col-6 col-md-3">
+                  <label class="form-label" style="font-size:11px;" data-i18n="maxLogFile">Размер файла (МБ)</label>
+                  <input type="number" class="form-control form-control-sm" id="set-log-mb" min="1" max="200">
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label" style="font-size:11px;" data-i18n="logBackups">Архивов</label>
+                  <input type="number" class="form-control form-control-sm" id="set-log-backups" min="0" max="20">
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label" style="font-size:11px;" data-i18n="maxLogEntries">Записей в памяти</label>
+                  <input type="number" class="form-control form-control-sm" id="set-log-entries" min="50" max="10000">
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label" style="font-size:11px;" data-i18n="maxMetrics">История метрик</label>
+                  <input type="number" class="form-control form-control-sm" id="set-max-metrics" min="50" max="10000">
+                </div>
+              </div>
+              <div class="form-text" style="font-size:10px;" data-i18n="logLimitsHint">
+                Файл лога обрезается автоматически: при достижении размера старое уходит в архив.
+              </div>
+            </div>
+
+            <hr style="border-color:var(--border-color);">
+
+            <!-- RANDOMIZER -->
+            <div class="mb-4">
+              <h6 style="color:var(--accent);font-size:13px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">
+                <i class="bi bi-dice-5 me-1"></i> <span data-i18n="randomizerSection">Рандомайзер</span>
+              </h6>
+              <div class="mb-2">
+                <label class="form-label" style="font-size:12px;" data-i18n="randomizerMode">Режим открытия</label>
+                <select class="form-select form-select-sm" id="set-randomizer-mode">
+                  <option value="floating" data-i18n="modeFloating">Панель внутри окна (плавающая)</option>
+                  <option value="window" data-i18n="modeWindow">Отдельное окно ОС</option>
+                </select>
+                <div class="form-text" style="font-size:10px;" data-i18n="randomizerModeHint">В плавающей панели есть кнопка ↗ для выноса в отдельное окно.</div>
               </div>
             </div>
 
@@ -159,40 +263,40 @@ window.App = window.App || {};
             <!-- LIMITS -->
             <div class="mb-3">
               <h6 style="color:var(--accent);font-size:13px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">
-                <i class="bi bi-speedometer me-1"></i> Лимиты
+                <i class="bi bi-speedometer me-1"></i> <span data-i18n="limits">Лимиты</span>
               </h6>
 
               <div class="row g-2">
                 <div class="col-6 col-md-4">
-                  <label class="form-label" style="font-size:11px;">Макс. вкладок</label>
+                  <label class="form-label" style="font-size:11px;" data-i18n="maxTabs">Макс. вкладок</label>
                   <input type="number" class="form-control form-control-sm" id="set-max-tabs" min="1" max="100">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label" style="font-size:11px;">Макс. params</label>
+                  <label class="form-label" style="font-size:11px;" data-i18n="maxParams">Макс. параметров</label>
                   <input type="number" class="form-control form-control-sm" id="set-max-params" min="1" max="200">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label" style="font-size:11px;">Макс. headers</label>
+                  <label class="form-label" style="font-size:11px;" data-i18n="maxHeaders">Макс. заголовков</label>
                   <input type="number" class="form-control form-control-sm" id="set-max-headers" min="1" max="200">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label" style="font-size:11px;">Макс. body (КБ)</label>
+                  <label class="form-label" style="font-size:11px;" data-i18n="maxBody">Макс. тело (КБ)</label>
                   <input type="number" class="form-control form-control-sm" id="set-max-body" min="1" max="10000">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label" style="font-size:11px;">Макс. URL</label>
+                  <label class="form-label" style="font-size:11px;" data-i18n="maxUrl">Макс. URL</label>
                   <input type="number" class="form-control form-control-sm" id="set-max-url" min="256" max="65536">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label" style="font-size:11px;">Макс. ответ (КБ)</label>
+                  <label class="form-label" style="font-size:11px;" data-i18n="maxResponse">Макс. ответ (КБ)</label>
                   <input type="number" class="form-control form-control-sm" id="set-max-resp" min="100" max="50000">
                 </div>
                 <div class="col-6 col-md-4">
-                  <label class="form-label" style="font-size:11px;">Таймаут (сек)</label>
+                  <label class="form-label" style="font-size:11px;" data-i18n="timeout">Таймаут (сек)</label>
                   <input type="number" class="form-control form-control-sm" id="set-timeout" min="1" max="300">
                 </div>
               </div>
-              <div class="form-text" style="font-size:10px;margin-top:6px;">
+              <div class="form-text" style="font-size:10px;margin-top:6px;" data-i18n="limitsHint">
                 Увеличивайте осторожно — высокие значения могут перегрузить приложение.
               </div>
             </div>
@@ -200,11 +304,11 @@ window.App = window.App || {};
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-outline-secondary btn-sm" id="set-reset-btn">
-              <i class="bi bi-arrow-counterclockwise me-1"></i>По умолчанию
+              <i class="bi bi-arrow-counterclockwise me-1"></i><span data-i18n="defaults">По умолчанию</span>
             </button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Отмена</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal" data-i18n="cancel">Отмена</button>
             <button type="button" class="btn send-btn btn-sm" id="set-save-btn">
-              <i class="bi bi-check-lg me-1"></i>Сохранить
+              <i class="bi bi-check-lg me-1"></i><span data-i18n="save">Сохранить</span>
             </button>
           </div>
         </div>
@@ -219,6 +323,13 @@ window.App = window.App || {};
     // Open button
     document.getElementById("settings-btn")?.addEventListener("click", () => {
       fillForm(_settings);
+      // Подсказка о количестве ошибок
+      const hint = document.getElementById("settings-error-hint");
+      if (hint && App.getErrorCount) {
+        const n = App.getErrorCount();
+        hint.textContent = n > 0 ? `(${n})` : "";
+      }
+      _refreshLogSize();
       modal.show();
     });
 
@@ -233,15 +344,57 @@ window.App = window.App || {};
     document.getElementById("set-reset-btn").addEventListener("click", () => {
       fillForm(DEFAULTS);
     });
+
+    // Очистка логов прямо из настроек
+    document.getElementById("settings-clear-log").addEventListener("click", async () => {
+      const ok = await App.showConfirm({
+        title: App.t("clearLogs"),
+        message: App.t("clearLogConfirm"),
+        okText: App.t("clear"), danger: true,
+      });
+      if (!ok) return;
+
+      App.clearLogBuffer && App.clearLogBuffer();
+      if (window.pywebview?.api?.clear_log) {
+        const res = await window.pywebview.api.clear_log(true);
+        if (!res.ok) { App.showAlert(App.t("error") + ": " + res.error); return; }
+      }
+      await _refreshLogSize();
+      const hint = document.getElementById("settings-error-hint");
+      if (hint) hint.textContent = "";
+      App.syncToast && App.syncToast(App.t("logsCleared"));
+    });
   };
+
+  /** Показать размер файла лога под кнопками */
+  async function _refreshLogSize() {
+    const el = document.getElementById("settings-log-size");
+    if (!el || !window.pywebview?.api?.get_log_stats) return;
+    try {
+      const s = await window.pywebview.api.get_log_stats();
+      if (!s.ok) { el.textContent = ""; return; }
+      const kb = s.size < 1024 ? s.size + " B"
+               : s.size < 1048576 ? (s.size / 1024).toFixed(1) + " KB"
+               : (s.size / 1048576).toFixed(2) + " MB";
+      el.textContent = `${App.t("logFile")}: ${kb}` +
+        (s.backups ? ` · ${App.t("archives")}: ${s.backups}` : "") +
+        ` · ${s.path}`;
+    } catch (_) { el.textContent = ""; }
+  }
 
   // ============================================================
   // FORM ↔ SETTINGS
   // ============================================================
   function fillForm(s) {
+    document.getElementById("set-language").value          = s.language || "ru";
     document.getElementById("set-api-url").value          = s.apiBaseUrl;
     document.getElementById("set-logging-enabled").checked = s.loggingEnabled;
     document.getElementById("set-log-level").value         = s.logLevel;
+    document.getElementById("set-log-mb").value            = s.maxLogFileMB;
+    document.getElementById("set-log-backups").value       = s.logBackupCount;
+    document.getElementById("set-log-entries").value       = s.maxLogEntries;
+    document.getElementById("set-max-metrics").value       = s.maxMetrics;
+    document.getElementById("set-randomizer-mode").value   = s.randomizerMode || "floating";
     document.getElementById("set-max-tabs").value          = s.maxTabs;
     document.getElementById("set-max-params").value        = s.maxParams;
     document.getElementById("set-max-headers").value       = s.maxHeaders;
@@ -252,9 +405,15 @@ window.App = window.App || {};
   }
 
   function readForm() {
+    _settings.language             = document.getElementById("set-language").value;
     _settings.apiBaseUrl           = document.getElementById("set-api-url").value.trim() || DEFAULTS.apiBaseUrl;
     _settings.loggingEnabled       = document.getElementById("set-logging-enabled").checked;
     _settings.logLevel             = document.getElementById("set-log-level").value;
+    _settings.maxLogFileMB         = clamp(+document.getElementById("set-log-mb").value, 1, 200);
+    _settings.logBackupCount       = clamp(+document.getElementById("set-log-backups").value, 0, 20);
+    _settings.maxLogEntries        = clamp(+document.getElementById("set-log-entries").value, 50, 10000);
+    _settings.maxMetrics           = clamp(+document.getElementById("set-max-metrics").value, 50, 10000);
+    _settings.randomizerMode       = document.getElementById("set-randomizer-mode").value;
     _settings.maxTabs              = clamp(+document.getElementById("set-max-tabs").value, 1, 100);
     _settings.maxParams            = clamp(+document.getElementById("set-max-params").value, 1, 200);
     _settings.maxHeaders           = clamp(+document.getElementById("set-max-headers").value, 1, 200);

@@ -29,7 +29,7 @@ window.App = window.App || {};
 
   App.addTab = function (overrides) {
     if (state.tabs.length >= App.LIMITS.MAX_TABS) {
-      alert(`Максимум ${App.LIMITS.MAX_TABS} вкладок!`);
+      App.showAlert(`${App.t("maxTabsReached")} ${App.LIMITS.MAX_TABS}`);
       return null;
     }
     const tab = App.createTab(overrides);
@@ -86,6 +86,9 @@ window.App = window.App || {};
   };
 
   App.tabTitle = function (tab) {
+    if (tab.method === "RANDOMIZER") {
+      return tab.title || "🎲 Randomizer";
+    }
     if (tab.method === "USERS") {
       return tab.title || "👥 Users";
     }

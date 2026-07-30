@@ -35,10 +35,21 @@ const Generator = (() => {
    */
   async function init() {
     log("🚀 Generator initializing...");
-    createModal();
-    setupEventListeners();
+    ensureModal();
     await detectFormFields();
     log("✅ Generator ready!");
+  }
+
+  /**
+   * Гарантирует наличие модалки в DOM.
+   * Раньше модалка создавалась только если pywebview успел подняться за 500 мс —
+   * иначе showModal() получал null и Bootstrap падал с
+   * "Cannot read properties of undefined (reading 'backdrop')".
+   */
+  function ensureModal() {
+    if (document.getElementById("generator-modal")) return;
+    createModal();
+    setupEventListeners();
   }
 
   /**
@@ -489,11 +500,21 @@ rejected</textarea>
    * Show modal
    */
   function showModal() {
-    const el = document.getElementById("generator-modal");
-    // getOrCreateInstance — НЕ new bootstrap.Modal, иначе плодятся backdrop-ы
-    const modal = bootstrap.Modal.getOrCreateInstance(el);
-    detectFormFields();
-    modal.show();
+    try {
+      ensureModal();                       // создаст, если ещё нет
+      const el = document.getElementById("generator-modal");
+      if (!el) {
+        App.showAlert && App.showAlert("Не удалось открыть генератор данных");
+        return;
+      }
+      // getOrCreateInstance — НЕ new bootstrap.Modal, иначе плодятся backdrop-ы
+      const modal = bootstrap.Modal.getOrCreateInstance(el);
+      detectFormFields();
+      modal.show();
+    } catch (e) {
+      App.logError && App.logError("Generator", "showModal: " + e.message, e.stack);
+      App.showAlert && App.showAlert((App.t ? App.t("error") : "Ошибка") + ": " + e.message);
+    }
   }
 
   /**
@@ -513,23 +534,12 @@ rejected</textarea>
   };
 })();
 
-// Initialize when DOM ready or on page load
+// Модалка строится сразу, не дожидаясь pywebview — она нужна для показа,
+// а API требуется только для самой генерации значений.
 document.addEventListener("DOMContentLoaded", () => {
-  if (window.pywebview && window.pywebview.api) {
+  try {
     Generator.init();
-  } else {
-    // Fallback: wait for pywebview
-    setTimeout(() => {
-      if (window.pywebview && window.pywebview.api) {
-        Generator.init();
-      }
-    }, 500);
-  }
-});
-
-// Also try on load event
-window.addEventListener("load", () => {
-  if (window.pywebview && window.pywebview.api) {
-    Generator.log("Initialized via load event");
+  } catch (e) {
+    if (window.App && App.logError) App.logError("Generator", "init: " + e.message, e.stack);
   }
 });

@@ -13,6 +13,7 @@ from datetime import datetime
 import random
 import string
 import re
+import requests
 
 from network import send_http_request
 
@@ -39,25 +40,53 @@ API_BASE_URL = "http://127.0.0.1:8000"
 
 LOG_FILE = os.path.join(USER_DATA_DIR, "testsys.log")
 
-# Create logger
 logger = logging.getLogger("TestSys")
 logger.setLevel(logging.DEBUG)
+logger.propagate = False
 
-# File handler
-try:
-    file_handler = logging.FileHandler(LOG_FILE, encoding='utf-8')
-    file_handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-except Exception as e:
-    print(f"Failed to setup file logging: {e}")
+# Модуль может быть импортирован повторно (дочерние окна) — не плодим
+# обработчики, иначе каждая строка пишется в файл по нескольку раз.
+if not logger.handlers:
+    # RotatingFileHandler вместо FileHandler:
+    #  * mode="a" — дописываем, а не затираем при каждом запуске
+    #  * ротация — файл не растёт бесконечно, старое уезжает в .1/.2/.3
+    try:
+        from logging.handlers import RotatingFileHandler
 
-# Console handler (for development)
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-console_handler.setFormatter(logging.Formatter('%(levelname)s - %(message)s'))
-logger.addHandler(console_handler)
+        file_handler = RotatingFileHandler(
+            LOG_FILE,
+            mode="a",
+            maxBytes=5 * 1024 * 1024,   # 5 МБ на файл
+            backupCount=3,               # храним 3 предыдущих
+            encoding="utf-8",
+            delay=False,
+        )
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+        )
+        logger.addHandler(file_handler)
+    except Exception as e:
+        print(f"Failed to setup file logging: {e}")
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(logging.Formatter("%(levelname)s - %(message)s"))
+    logger.addHandler(console_handler)
+
+    # Разделитель сессий — видно, где начался новый запуск
+    logger.info("=" * 60)
+    logger.info(f"НОВЫЙ ЗАПУСК · {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("=" * 60)
+
+
+def _flush_log():
+    """Принудительно сбросить буферы — чтобы просмотрщик видел свежие записи."""
+    for h in logger.handlers:
+        try:
+            h.flush()
+        except Exception:
+            pass
 
 
 # ============================================================
@@ -201,11 +230,31 @@ def validate_field(field_name, value):
 # API CLASS
 # ============================================================
 
+def _dialog_type(name):
+    """
+    Совместимость pywebview: в новых версиях webview.FileDialog.SAVE,
+    в старых webview.SAVE_DIALOG. Без этого сыплются deprecation-warning.
+    """
+    fd = getattr(webview, "FileDialog", None)
+    if fd is not None and hasattr(fd, name):
+        return getattr(fd, name)
+    return getattr(webview, f"{name}_DIALOG")
+
+
 class Api:
-    def __init__(self):
+    def __init__(self, window_kind="main"):
         self.child_windows = []
         self._detached_tab_state_json = None
-        logger.info("=== TestSys API Initialized ===")
+        # Тип окна: main | randomizer | detached.
+        # Раньше он передавался через #hash в URL, но pywebview отдаёт
+        # страницу через свой http-сервер и хеш до JS не доезжал —
+        # дочернее окно считало себя главным и ломало вставку данных.
+        self.window_kind = window_kind
+        logger.info(f"=== TestSys API Initialized (window={window_kind}) ===")
+
+    def get_window_kind(self):
+        """Какому окну принадлежит этот экземпляр API."""
+        return self.window_kind
 
     # ========== LOGGING ==========
     def log_message(self, message, level="INFO"):
@@ -223,6 +272,164 @@ class Api:
     def get_log_file(self):
         """Return path to log file"""
         return LOG_FILE
+
+    def log_client_error(self, entry_json):
+        """Записать ошибку из UI (JS) в общий лог-файл."""
+        try:
+            e = json.loads(entry_json) if isinstance(entry_json, str) else entry_json
+            level = (e.get("level") or "ERROR").upper()
+            src = e.get("source") or "UI"
+            msg = e.get("message") or ""
+            stack = e.get("stack") or ""
+            line = f"[{src}] {msg}"
+            if stack:
+                line += f"\n{stack}"
+            if level == "WARN" or level == "WARNING":
+                logger.warning(line)
+            elif level == "INFO":
+                logger.info(line)
+            else:
+                logger.error(line)
+            return True
+        except Exception as ex:
+            logger.error(f"log_client_error failed: {ex}")
+            return False
+
+    def read_log(self, max_lines=3000):
+        """Прочитать хвост лог-файла."""
+        try:
+            # Без этого свежие записи могут ещё сидеть в буфере
+            # и просмотрщик покажет неполную картину.
+            _flush_log()
+
+            if not os.path.exists(LOG_FILE):
+                return {"ok": True, "lines": [], "path": LOG_FILE, "size": 0, "total": 0}
+
+            size = os.path.getsize(LOG_FILE)
+            with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+                if size > 5_000_000:
+                    f.seek(size - 5_000_000)
+                    f.readline()  # пропустить обрезанную строку
+                lines = f.readlines()
+
+            total = len(lines)
+            tail = [ln.rstrip("\n") for ln in lines[-int(max_lines):]]
+            return {
+                "ok": True, "lines": tail, "path": LOG_FILE,
+                "size": size, "total": total, "shown": len(tail),
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e), "path": LOG_FILE}
+
+    def configure_log_rotation(self, max_mb=5, backup_count=3):
+        """
+        Перенастроить ротацию лога на лету.
+        Пользователь задаёт размер в настройках — применяем без перезапуска.
+        """
+        try:
+            max_bytes = int(max(1, min(200, max_mb))) * 1024 * 1024
+            backups = int(max(0, min(20, backup_count)))
+            changed = False
+
+            for h in logger.handlers:
+                if hasattr(h, "maxBytes"):
+                    if h.maxBytes != max_bytes or h.backupCount != backups:
+                        h.maxBytes = max_bytes
+                        h.backupCount = backups
+                        changed = True
+
+            if changed:
+                logger.info(f"Ротация лога: {max_mb} МБ, архивов {backups}")
+            return {"ok": True, "max_mb": max_mb, "backups": backups}
+        except Exception as e:
+            logger.error(f"configure_log_rotation failed: {e}")
+            return {"ok": False, "error": str(e)}
+
+    def get_log_stats(self):
+        """Размер лога и количество архивных файлов — для UI."""
+        try:
+            _flush_log()
+            size = os.path.getsize(LOG_FILE) if os.path.exists(LOG_FILE) else 0
+            backups = [f for f in os.listdir(USER_DATA_DIR)
+                       if f.startswith("testsys.log.")]
+            return {"ok": True, "size": size, "backups": len(backups), "path": LOG_FILE}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def clear_log(self, with_backups=True):
+        """Очистить лог-файл (и архивы ротации)."""
+        try:
+            removed = 0
+
+            # Через сам обработчик, чтобы не рассинхронизировать его позицию
+            for h in logger.handlers:
+                if hasattr(h, "baseFilename"):
+                    try:
+                        h.acquire()
+                        if h.stream:
+                            h.stream.close()
+                            h.stream = None
+                        with open(LOG_FILE, "w", encoding="utf-8"):
+                            pass
+                        h.stream = h._open()
+                    finally:
+                        h.release()
+
+            if with_backups:
+                for f in os.listdir(USER_DATA_DIR):
+                    if f.startswith("testsys.log."):
+                        try:
+                            os.remove(os.path.join(USER_DATA_DIR, f))
+                            removed += 1
+                        except Exception:
+                            pass
+
+            logger.info(f"Лог очищен пользователем (архивов удалено: {removed})")
+            _flush_log()
+            return {"ok": True, "backups_removed": removed}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def export_log(self):
+        """Сохранить копию лога через диалог."""
+        try:
+            win = webview.active_window() or self._find_main_window()
+            if not win:
+                return {"ok": False, "error": "Окно не найдено"}
+            result = win.create_file_dialog(
+                _dialog_type("SAVE"),
+                save_filename="testsys_log.txt",
+                file_types=("Text files (*.txt)", "Log files (*.log)"),
+            )
+            if not result:
+                return {"ok": False, "cancelled": True}
+            path = result if isinstance(result, str) else result[0]
+
+            content = ""
+            if os.path.exists(LOG_FILE):
+                with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+            return {"ok": True, "path": path}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def open_log_folder(self):
+        """Открыть папку с логом в проводнике."""
+        try:
+            folder = os.path.dirname(LOG_FILE)
+            if sys.platform == "win32":
+                os.startfile(folder)
+            elif sys.platform == "darwin":
+                import subprocess
+                subprocess.Popen(["open", folder])
+            else:
+                import subprocess
+                subprocess.Popen(["xdg-open", folder])
+            return {"ok": True, "path": folder}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
 
     # ========== DATA GENERATOR ==========
     def generate_field(self, field_name):
@@ -321,7 +528,7 @@ class Api:
 
     def open_detached_window(self, tab_state):
         """Создаёт новое окно ОС с копией вкладки."""
-        new_api = Api()
+        new_api = Api(window_kind="detached")
         state_json = json.dumps(tab_state)
         new_api._detached_tab_state_json = state_json
 
@@ -391,6 +598,381 @@ class Api:
             except Exception:
                 return None
         return None
+
+    # ========== RANDOMIZER WINDOW ==========
+    RANDOMIZER_WINDOW_TITLE = "TestSys — Randomizer"
+
+    def open_randomizer_window(self):
+        """Открывает рандомайзер в отдельном независимом окне ОС."""
+        # Если окно уже открыто — не создаём второе
+        for w in webview.windows:
+            if w.title == self.RANDOMIZER_WINDOW_TITLE:
+                try:
+                    w.restore()
+                    w.show()
+                except Exception:
+                    pass
+                return True
+
+        # Тип окна передаётся через сам объект API — надёжнее хеша в URL
+        new_api = Api(window_kind="randomizer")
+        win = webview.create_window(
+            title=self.RANDOMIZER_WINDOW_TITLE,
+            url=INDEX_HTML,
+            js_api=new_api,
+            width=560,
+            height=760,
+            min_size=(420, 500),
+        )
+
+        def on_loaded():
+            win.evaluate_js("window.loadRandomizerWindow && window.loadRandomizerWindow()")
+
+        def on_closing():
+            try:
+                self.child_windows.remove(win)
+            except ValueError:
+                pass
+            return True
+
+        win.events.loaded += on_loaded
+        win.events.closing += on_closing
+        self.child_windows.append(win)
+        logger.info("Randomizer window opened")
+        return True
+
+    def insert_into_main_body(self, text):
+        """Вставить текст в Body активной вкладки главного окна (из окна рандомайзера)."""
+        main_window = self._find_main_window()
+        if not main_window:
+            return False
+        try:
+            payload = json.dumps(text)
+            main_window.evaluate_js(f"window.insertIntoActiveBody && window.insertIntoActiveBody({payload})")
+            return True
+        except Exception as e:
+            logger.error(f"insert_into_main_body failed: {e}")
+            return False
+
+    def set_main_body(self, text):
+        """Заменить Body активной вкладки главного окна (из окна рандомайзера)."""
+        main_window = self._find_main_window()
+        if not main_window:
+            return False
+        try:
+            payload = json.dumps(text)
+            main_window.evaluate_js(f"window.setActiveBody && window.setActiveBody({payload})")
+            return True
+        except Exception as e:
+            logger.error(f"set_main_body failed: {e}")
+            return False
+
+    def get_main_body(self):
+        """Получить Body активной вкладки главного окна (для окна рандомайзера)."""
+        main_window = self._find_main_window()
+        if not main_window:
+            return None
+        try:
+            return main_window.evaluate_js("window.getActiveBody ? window.getActiveBody() : null")
+        except Exception as e:
+            logger.error(f"get_main_body failed: {e}")
+            return None
+
+    # ========== SYNC: HOST MODE (этот комп = сервер) ==========
+    def sync_host_start(self, port=8777, token="", host_name=""):
+        """Стать хостом: поднять LAN-сервер синхронизации."""
+        import sync_server
+        data_file = os.path.join(USER_DATA_DIR, "shared_collections.json")
+        res = sync_server.start(port=port, data_file=data_file, token=token, host_name=host_name)
+        logger.info(f"Sync host start: {res}")
+        return res
+
+    def sync_host_stop(self):
+        import sync_server
+        res = sync_server.stop()
+        logger.info("Sync host stopped")
+        return res
+
+    def sync_host_status(self):
+        import sync_server
+        return sync_server.status()
+
+    def sync_get_local_ips(self):
+        import sync_server
+        return sync_server.get_local_ips()
+
+    # ========== SYNC: CLIENT MODE (подключение к хосту) ==========
+    def sync_client_ping(self, base_url, token=""):
+        """Проверить доступность хоста."""
+        try:
+            headers = {"X-Sync-Token": token} if token else {}
+            r = requests.get(f"{base_url.rstrip('/')}/api/ping", headers=headers, timeout=5)
+            return {"ok": r.ok, "status": r.status_code, "data": r.json() if r.ok else None}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def sync_client_pull(self, base_url, token=""):
+        """Забрать коллекции с хоста."""
+        try:
+            headers = {"X-Sync-Token": token} if token else {}
+            r = requests.get(f"{base_url.rstrip('/')}/api/collections", headers=headers, timeout=10)
+            if r.status_code == 401:
+                return {"ok": False, "error": "Неверный токен доступа"}
+            if not r.ok:
+                return {"ok": False, "error": f"HTTP {r.status_code}"}
+            return {"ok": True, "doc": r.json()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def sync_client_push(self, base_url, token, payload_json):
+        """Отправить коллекции на хост."""
+        try:
+            headers = {"Content-Type": "application/json"}
+            if token:
+                headers["X-Sync-Token"] = token
+            r = requests.put(
+                f"{base_url.rstrip('/')}/api/collections",
+                headers=headers,
+                data=payload_json.encode("utf-8"),
+                timeout=10,
+            )
+            if r.status_code == 401:
+                return {"ok": False, "error": "Неверный токен доступа"}
+            if r.status_code == 409:
+                return {"ok": False, "conflict": True, "data": r.json()}
+            if not r.ok:
+                return {"ok": False, "error": f"HTTP {r.status_code}"}
+            return {"ok": True, "data": r.json()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ========== SYNC: SHARED FOLDER (Dropbox / Яндекс.Диск / OneDrive) ==========
+    def pick_shared_folder(self):
+        """Диалог выбора папки для общего файла коллекций."""
+        try:
+            win = webview.active_window() or self._find_main_window()
+            if not win:
+                return {"ok": False, "error": "Окно не найдено"}
+            result = win.create_file_dialog(_dialog_type("FOLDER"))
+            if not result:
+                return {"ok": False, "cancelled": True}
+            path = result if isinstance(result, str) else result[0]
+            return {"ok": True, "path": path}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def shared_folder_read(self, folder_path):
+        """Прочитать общий файл коллекций из папки."""
+        try:
+            path = os.path.join(folder_path, "testsys_shared.json")
+            if not os.path.exists(path):
+                return {"ok": True, "exists": False, "mtime": 0, "content": None}
+            mtime = os.path.getmtime(path)
+            with open(path, "r", encoding="utf-8") as f:
+                return {"ok": True, "exists": True, "mtime": mtime, "content": f.read()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def shared_folder_write(self, folder_path, content):
+        """Записать общий файл коллекций (атомарно)."""
+        try:
+            if not os.path.isdir(folder_path):
+                return {"ok": False, "error": "Папка не найдена"}
+            path = os.path.join(folder_path, "testsys_shared.json")
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(content)
+            os.replace(tmp, path)
+            return {"ok": True, "mtime": os.path.getmtime(path), "path": path}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def shared_folder_mtime(self, folder_path):
+        """Время изменения общего файла — для отслеживания правок других."""
+        try:
+            path = os.path.join(folder_path, "testsys_shared.json")
+            return os.path.getmtime(path) if os.path.exists(path) else 0
+        except Exception:
+            return 0
+
+    # ========== SWAGGER / OPENAPI ==========
+    def fetch_swagger(self, url):
+        """
+        Скачать спецификацию OpenAPI.
+        Тянем из Python, а не из JS — в вебвью запрос к чужому домену
+        упёрся бы в CORS.
+        """
+        try:
+            u = url.strip()
+            if not u.lower().startswith(("http://", "https://")):
+                return {"ok": False, "error": "URL должен начинаться с http:// или https://"}
+
+            candidates = [u]
+            # Часто дают адрес UI Swagger — подставим типичные пути к самой спеке
+            if not u.rstrip("/").endswith((".json", ".yaml", ".yml")):
+                base = u.rstrip("/")
+                for suffix in ("/openapi.json", "/swagger.json", "/v3/api-docs",
+                               "/api-docs", "/swagger/v1/swagger.json"):
+                    candidates.append(base + suffix)
+                # .../swagger-ui/  ->  .../swagger.json рядом
+                if "/swagger" in base:
+                    candidates.append(base.rsplit("/swagger", 1)[0] + "/swagger.json")
+
+            tried = []
+            for cand in candidates:
+                try:
+                    r = requests.get(cand, timeout=15, headers={"Accept": "application/json"})
+                    tried.append(f"{cand} → {r.status_code}")
+                    if not r.ok:
+                        continue
+                    text = r.text
+                    # Убедимся, что это похоже на спеку, а не HTML-страница
+                    stripped = text.lstrip()
+                    if not stripped.startswith("{"):
+                        continue
+                    if '"openapi"' not in text and '"swagger"' not in text:
+                        continue
+                    logger.info(f"Swagger загружен: {cand} ({len(text)} байт)")
+                    return {"ok": True, "content": text, "url": cand}
+                except Exception as e:
+                    tried.append(f"{cand} → {e}")
+                    continue
+
+            return {
+                "ok": False,
+                "error": "Спецификация не найдена по адресу",
+                "tried": tried[:6],
+            }
+        except Exception as e:
+            logger.error(f"fetch_swagger failed: {e}")
+            return {"ok": False, "error": str(e)}
+
+    def save_text_file(self, filename, content, file_types=None):
+        """
+        Сохранить произвольный текст через диалог.
+        В вебвью ссылка с download не срабатывает — экспорт CSV и подобное
+        нужно проводить через нативный диалог.
+        """
+        try:
+            win = webview.active_window() or self._find_main_window()
+            if not win:
+                return {"ok": False, "error": "Окно не найдено"}
+
+            types = tuple(file_types) if file_types else ("All files (*.*)",)
+            result = win.create_file_dialog(
+                _dialog_type("SAVE"),
+                save_filename=filename,
+                file_types=types,
+            )
+            if not result:
+                return {"ok": False, "cancelled": True}
+
+            path = result if isinstance(result, str) else result[0]
+            # BOM — чтобы Excel не ломал кириллицу в CSV
+            enc = "utf-8-sig" if path.lower().endswith(".csv") else "utf-8"
+            with open(path, "w", encoding=enc, newline="") as f:
+                f.write(content)
+
+            logger.info(f"Файл сохранён: {path}")
+            return {"ok": True, "path": path}
+        except Exception as e:
+            logger.error(f"save_text_file failed: {e}")
+            return {"ok": False, "error": str(e)}
+
+    def save_metrics(self, metrics_json):
+        """Сохранить историю метрик, чтобы она пережила перезапуск."""
+        try:
+            path = os.path.join(USER_DATA_DIR, "metrics.json")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(metrics_json)
+            return True
+        except Exception as e:
+            logger.error(f"save_metrics failed: {e}")
+            return False
+
+    def load_metrics(self):
+        """Загрузить историю метрик."""
+        path = os.path.join(USER_DATA_DIR, "metrics.json")
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return f.read()
+            except Exception:
+                return None
+        return None
+
+    def open_swagger_file(self):
+        """Выбрать файл спецификации на диске."""
+        try:
+            win = webview.active_window() or self._find_main_window()
+            if not win:
+                return {"ok": False, "error": "Окно не найдено"}
+            result = win.create_file_dialog(
+                _dialog_type("OPEN"),
+                allow_multiple=False,
+                file_types=("OpenAPI (*.json;*.yaml;*.yml)", "All files (*.*)"),
+            )
+            if not result:
+                return {"ok": False, "cancelled": True}
+            path = result if isinstance(result, str) else result[0]
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                return {"ok": True, "content": f.read(), "path": path}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ========== COLLECTIONS EXPORT / IMPORT ==========
+    def export_collection_file(self, filename, content):
+        """Диалог сохранения: выгружает коллекцию в .json файл."""
+        try:
+            win = webview.active_window() or self._find_main_window()
+            if not win:
+                return {"ok": False, "error": "Окно не найдено"}
+
+            result = win.create_file_dialog(
+                _dialog_type("SAVE"),
+                save_filename=filename,
+                file_types=("JSON files (*.json)",),
+            )
+            if not result:
+                return {"ok": False, "cancelled": True}
+
+            path = result if isinstance(result, str) else result[0]
+            if not path.lower().endswith(".json"):
+                path += ".json"
+
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            logger.info(f"Collection exported: {path}")
+            return {"ok": True, "path": path}
+        except Exception as e:
+            logger.error(f"Export failed: {e}")
+            return {"ok": False, "error": str(e)}
+
+    def import_collection_file(self):
+        """Диалог открытия: читает коллекцию из .json файла."""
+        try:
+            win = webview.active_window() or self._find_main_window()
+            if not win:
+                return {"ok": False, "error": "Окно не найдено"}
+
+            result = win.create_file_dialog(
+                _dialog_type("OPEN"),
+                allow_multiple=False,
+                file_types=("JSON files (*.json)", "All files (*.*)"),
+            )
+            if not result:
+                return {"ok": False, "cancelled": True}
+
+            path = result if isinstance(result, str) else result[0]
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            logger.info(f"Collection imported: {path}")
+            return {"ok": True, "content": content, "path": path}
+        except Exception as e:
+            logger.error(f"Import failed: {e}")
+            return {"ok": False, "error": str(e)}
 
     # ========== COLLECTIONS ==========
     def save_collections(self, collections_json):

@@ -11,7 +11,7 @@ window.App = window.App || {};
       <div class="modal-dialog modal-xl">
         <div class="modal-content theme-modal-content">
           <div class="modal-header">
-            <h5 class="modal-title"><i class="bi bi-graph-up me-2"></i>Метрики запросов</h5>
+            <h5 class="modal-title"><i class="bi bi-graph-up me-2"></i><span data-i18n="metrics">Метрики запросов</span></h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body" style="max-height:70vh;overflow-y:auto;">
@@ -22,12 +22,12 @@ window.App = window.App || {};
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-outline-secondary btn-sm" id="metrics-clear-btn">
-              <i class="bi bi-trash3 me-1"></i>Очистить
+              <i class="bi bi-trash3 me-1"></i><span data-i18n="clear">Очистить</span>
             </button>
             <button type="button" class="btn btn-outline-secondary btn-sm" id="metrics-export-btn">
-              <i class="bi bi-download me-1"></i>Export CSV
+              <i class="bi bi-download me-1"></i>CSV
             </button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Закрыть</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal" data-i18n="close">Закрыть</button>
           </div>
         </div>
       </div>
@@ -44,13 +44,25 @@ window.App = window.App || {};
     });
 
     // Clear
-    document.getElementById("metrics-clear-btn").addEventListener("click", () => {
-      App.metricsHistory = [];
+    document.getElementById("metrics-clear-btn").addEventListener("click", async () => {
+      const ok = await App.showConfirm({
+        title: App.t("clear"),
+        message: App.t("clearMetricsConfirm"),
+        okText: App.t("clear"), danger: true,
+      });
+      if (!ok) return;
+      await App.clearMetrics();
       _renderMetrics();
     });
 
     // Export
     document.getElementById("metrics-export-btn").addEventListener("click", _exportCsv);
+  };
+
+  /** Перерисовать метрики, если модалка открыта (нужно при смене языка) */
+  App.refreshMetricsIfOpen = function () {
+    const el = document.getElementById("metrics-modal");
+    if (el && el.classList.contains("show")) _renderMetrics();
   };
 
   // ============================================================
@@ -65,7 +77,7 @@ window.App = window.App || {};
   function _renderSummary(data) {
     const container = document.getElementById("metrics-summary");
     if (data.length === 0) {
-      container.innerHTML = '<div class="col-12 text-center" style="color:var(--text-dim);padding:16px;">Нет данных. Отправьте запрос.</div>';
+      container.innerHTML = `<div class="col-12 text-center" style="color:var(--text-dim);padding:16px;">${App.t("noMetrics")}</div>`;
       return;
     }
 
@@ -90,15 +102,15 @@ window.App = window.App || {};
     data.forEach(d => { methodCounts[d.method] = (methodCounts[d.method] || 0) + 1; });
 
     container.innerHTML = `
-      ${_card("Всего", total, "bi-send", "var(--accent)")}
-      ${_card("Успешных", success, "bi-check-circle", "#28a745")}
-      ${_card("Ошибок", failed, "bi-x-circle", "#dc3545")}
-      ${_card("Ср. время", avgTime + " ms", "bi-clock", "var(--accent)")}
-      ${_card("Мин / Макс", minTime + " / " + maxTime + " ms", "bi-speedometer", "var(--text-dim)")}
-      ${_card("Общий размер", _formatSize(totalSize), "bi-hdd", "var(--text-dim)")}
+      ${_card(App.t("total"), total, "bi-send", "var(--accent)")}
+      ${_card(App.t("successful"), success, "bi-check-circle", "#28a745")}
+      ${_card(App.t("failed"), failed, "bi-x-circle", "#dc3545")}
+      ${_card(App.t("avgTime"), avgTime + " ms", "bi-clock", "var(--accent)")}
+      ${_card(App.t("minMax"), minTime + " / " + maxTime + " ms", "bi-speedometer", "var(--text-dim)")}
+      ${_card(App.t("totalSize"), _formatSize(totalSize), "bi-hdd", "var(--text-dim)")}
       <div class="col-6 col-md-3">
         <div style="background:var(--bg-input);border:1px solid var(--border-color);border-radius:var(--radius);padding:10px;">
-          <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;">По статусам</div>
+          <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;">${App.t("byStatus")}</div>
           <div style="font-size:12px;margin-top:4px;">
             ${Object.entries(statusCounts).map(([k, v]) => `<span style="margin-right:8px;"><strong>${k}:</strong> ${v}</span>`).join("")}
           </div>
@@ -106,7 +118,7 @@ window.App = window.App || {};
       </div>
       <div class="col-6 col-md-3">
         <div style="background:var(--bg-input);border:1px solid var(--border-color);border-radius:var(--radius);padding:10px;">
-          <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;">По методам</div>
+          <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;">${App.t("byMethod")}</div>
           <div style="font-size:12px;margin-top:4px;">
             ${Object.entries(methodCounts).map(([k, v]) => `<span style="margin-right:8px;"><strong>${k}:</strong> ${v}</span>`).join("")}
           </div>
@@ -136,12 +148,12 @@ window.App = window.App || {};
       <table class="table table-sm" style="font-size:12px;color:var(--text-main);">
         <thead><tr>
           <th style="color:var(--text-dim);">#</th>
-          <th style="color:var(--text-dim);">Метод</th>
+          <th style="color:var(--text-dim);">${App.t("method")}</th>
           <th style="color:var(--text-dim);">URL</th>
-          <th style="color:var(--text-dim);">Статус</th>
-          <th style="color:var(--text-dim);">Время</th>
-          <th style="color:var(--text-dim);">Размер</th>
-          <th style="color:var(--text-dim);">Когда</th>
+          <th style="color:var(--text-dim);">${App.t("status")}</th>
+          <th style="color:var(--text-dim);">${App.t("time")}</th>
+          <th style="color:var(--text-dim);">${App.t("size")}</th>
+          <th style="color:var(--text-dim);">${App.t("when")}</th>
         </tr></thead><tbody>`;
 
     reversed.forEach((d, i) => {
@@ -185,14 +197,37 @@ window.App = window.App || {};
     }
   }
 
-  function _exportCsv() {
+  async function _exportCsv() {
     const data = App.metricsHistory;
-    if (!data.length) return;
-    let csv = "Method,URL,Status,Time_ms,Size_bytes,OK,Timestamp\n";
-    data.forEach(d => {
-      csv += `${d.method},"${(d.url || "").replace(/"/g, '""')}",${d.status || ""},${d.elapsed_ms},${d.size},${d.ok},${d.timestamp ? new Date(d.timestamp).toISOString() : ""}\n`;
-    });
-    const blob = new Blob([csv], { type: "text/csv" });
+    if (!data.length) { App.showAlert(App.t("noMetrics")); return; }
+
+    // Разделитель ';' — Excel с русской локалью иначе кладёт всё в одну колонку
+    const SEP = ";";
+    const esc = (v) => {
+      const s = String(v ?? "");
+      return /["\n;,]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+
+    const rows = [["Method", "URL", "Status", "Time_ms", "Size_bytes", "OK", "Timestamp"]];
+    data.forEach(d => rows.push([
+      d.method, d.url, d.status || "", d.elapsed_ms, d.size, d.ok ? "1" : "0",
+      d.timestamp ? new Date(d.timestamp).toISOString() : "",
+    ]));
+    const csv = rows.map(r => r.map(esc).join(SEP)).join("\r\n");
+
+    // В вебвью ссылка с download молча ничего не делает — сохраняем через Python
+    if (window.pywebview?.api?.save_text_file) {
+      const res = await window.pywebview.api.save_text_file(
+        "testsys-metrics.csv", csv, ["CSV (*.csv)", "All files (*.*)"]
+      );
+      if (res.cancelled) return;
+      if (res.ok) App.showAlert(res.path);
+      else App.showAlert(App.t("error") + ": " + res.error);
+      return;
+    }
+
+    // Запасной путь для запуска в обычном браузере
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "testsys-metrics.csv";

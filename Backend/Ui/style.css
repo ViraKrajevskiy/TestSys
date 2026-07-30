@@ -368,7 +368,569 @@ body {
   background: var(--bg-panel);
   padding: 16px;
   overflow-y: auto;
+  min-height: 120px;
+}
+
+/* Свёрнутое состояние — только шапка */
+.response-panel.collapsed {
+  min-height: 0;
+  height: auto !important;
+  max-height: none !important;
+  padding-bottom: 10px;
+}
+.response-panel.collapsed #response-body { display: none; }
+
+/* Кнопки в шапке ответа */
+.response-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.response-action-btn {
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--text-dim);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all .15s;
+  line-height: 1.5;
+}
+.response-action-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ==================== KEY-VALUE ТАБЛИЦА (как в Postman) ==================== */
+.kv-table {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.kv-head {
+  display: grid;
+  grid-template-columns: 32px 1fr 1fr 36px;
+  gap: 0;
+  background: var(--bg-input);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.kv-head > span { padding: 6px 10px; }
+
+.kv-row.kv-row-grid {
+  display: grid !important;
+  grid-template-columns: 32px 1fr 1fr 36px;
+  gap: 0 !important;
+  margin-bottom: 0 !important;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
+  transition: background .12s;
+}
+.kv-row.kv-row-grid:last-child { border-bottom: none; }
+.kv-row.kv-row-grid:hover { background: var(--bg-input); }
+
+.kv-row.kv-row-grid .kv-enabled {
+  justify-self: center;
+  cursor: pointer;
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+}
+
+.kv-row.kv-row-grid .kv-key,
+.kv-row.kv-row-grid .kv-value {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  color: var(--text-main);
+}
+.kv-row.kv-row-grid .kv-key { border-right: 1px solid var(--border-color) !important; }
+.kv-row.kv-row-grid .kv-key:focus,
+.kv-row.kv-row-grid .kv-value:focus {
+  background: var(--bg-app) !important;
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* Выключенная строка — приглушена, но читаема */
+.kv-row.kv-row-grid.kv-disabled .kv-key,
+.kv-row.kv-row-grid.kv-disabled .kv-value {
+  opacity: .45;
+  text-decoration: line-through;
+}
+
+.kv-row.kv-row-grid .kv-remove {
+  border: none !important;
+  background: transparent !important;
+  color: var(--text-dim) !important;
+  padding: 4px !important;
+  opacity: 0;
+  transition: opacity .12s, color .12s;
+}
+.kv-row.kv-row-grid:hover .kv-remove { opacity: 1; }
+.kv-row.kv-row-grid .kv-remove:hover { color: #dc3545 !important; }
+
+.kv-hint {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  margin-top: 6px;
+  opacity: .75;
+}
+
+/* ==================== ИКОНОЧНЫЕ КНОПКИ (сайдбар) ==================== */
+/* Были слишком мелкие и жались друг к другу — увеличиваем зону клика */
+.collection-group-title button,
+.collection-folder-header button,
+.collection-item button,
+.sidebar-section-title button,
+.var-row .var-delete-btn {
+  width: 22px;
+  height: 22px;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-size: 12px !important;
+  line-height: 1;
+  transition: background .12s, color .12s;
   flex-shrink: 0;
+}
+.collection-group-title button:hover,
+.collection-folder-header button:hover,
+.collection-item button:hover,
+.sidebar-section-title button:hover,
+.var-row .var-delete-btn:hover {
+  background: var(--bg-input);
+  color: var(--accent) !important;
+}
+/* Удаление — красным при наведении */
+.collection-group-title button[title*="далит"]:hover,
+.collection-folder-header button[title*="далит"]:hover,
+.collection-item button[title*="далит"]:hover,
+.collection-group-title button[title*="elet"]:hover,
+.collection-folder-header button[title*="elet"]:hover,
+.collection-item button[title*="elet"]:hover,
+.var-row .var-delete-btn:hover {
+  color: #dc3545 !important;
+}
+
+/* Действия появляются при наведении на строку — меньше визуального шума.
+   ВАЖНО: целимся по классу .row-actions, а не по :last-child — у встроенных
+   коллекций блока кнопок нет, и :last-child прятал сам текст запроса. */
+.row-actions {
+  opacity: 0;
+  transition: opacity .12s;
+  display: flex;
+  gap: 1px;
+  flex-shrink: 0;
+}
+.collection-item:hover .row-actions,
+.collection-folder-header:hover .row-actions,
+.collection-item:focus-within .row-actions,
+.collection-folder-header:focus-within .row-actions {
+  opacity: 1;
+}
+/* Кнопки коллекции видны всегда — их мало и они важные */
+.collection-group-title .row-actions { opacity: .55; }
+.collection-group-title:hover .row-actions { opacity: 1; }
+
+.var-row { display: flex; align-items: center; gap: 4px; }
+.var-row .var-value { flex: 1; min-width: 0; }
+
+/* ==================== ДИНАМИЧЕСКИЕ ПЕРЕМЕННЫЕ ==================== */
+.dynvars-list {
+  max-height: 40vh;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 4px;
+}
+
+.dynvar-group { margin-bottom: 8px; }
+.dynvar-group:last-child { margin-bottom: 0; }
+
+.dynvar-group-title {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 4px 6px;
+  position: sticky;
+  top: 0;
+  background: var(--bg-panel);
+  z-index: 1;
+}
+
+.dynvar-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background .1s;
+}
+.dynvar-item:hover { background: var(--bg-input); }
+
+.dynvar-token {
+  color: var(--accent);
+  font-size: 11.5px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 210px;
+}
+
+.dynvar-example {
+  color: var(--text-dim);
+  font-size: 11px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dynvar-copy {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity .1s, color .1s;
+  flex-shrink: 0;
+}
+.dynvar-item:hover .dynvar-copy { opacity: 1; }
+.dynvar-copy:hover { color: var(--accent); }
+
+.dynvars-preview {
+  background: var(--bg-app);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 11.5px;
+  color: var(--accent);
+  margin: 6px 0 2px;
+  min-height: 34px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Режим заполнения полей JSON */
+.dvf-intro {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  background: var(--bg-input);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+.dvf-head {
+  display: flex;
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 0 6px 4px;
+}
+.dvf-list {
+  max-height: 34vh;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 4px;
+}
+.dvf-row {
+  display: grid;
+  grid-template-columns: 18px minmax(70px, 1fr) minmax(60px, 1fr) 14px 160px;
+  gap: 7px;
+  align-items: center;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: opacity .12s;
+}
+.dvf-row:hover { background: var(--bg-input); }
+.dvf-row.dvf-off { opacity: .4; }
+.dvf-check { cursor: pointer; accent-color: var(--accent); }
+.dvf-path {
+  font-size: 12px; font-weight: 600; color: var(--text-main);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dvf-val {
+  font-size: 11px; color: var(--text-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dvf-arrow { color: var(--accent); font-size: 10px; }
+.dvf-sel {
+  width: 100%; padding: 3px 5px; font-size: 11px;
+  background: var(--bg-app); color: var(--accent);
+  border: 1px solid var(--border-color); border-radius: 3px;
+  font-family: 'Consolas', monospace;
+}
+.dvf-sel:focus { outline: none; border-color: var(--accent); }
+
+.dynvars-hint-warn {
+  background: rgba(255, 193, 7, .12);
+  border: 1px solid #ffc107;
+  border-radius: 4px;
+  padding: 6px 9px;
+  color: #ffc107;
+  font-size: 11.5px;
+}
+
+/* Кнопка вызова справочника рядом с полем */
+.dynvar-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-dim);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: 'Consolas', monospace;
+  transition: all .12s;
+  flex-shrink: 0;
+  line-height: 1.6;
+}
+.dynvar-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Предпросмотр подстановки под телом запроса */
+.body-dynvar-preview {
+  margin-top: 6px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius);
+  background: var(--bg-app);
+  overflow: hidden;
+}
+.bdp-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  border-bottom: 1px solid var(--border-color);
+}
+.bdp-refresh {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0 4px;
+  font-size: 11px;
+}
+.bdp-refresh:hover { color: var(--accent); }
+.bdp-body {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  color: var(--accent);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 140px;
+  overflow-y: auto;
+}
+.bdp-warn {
+  padding: 4px 10px 6px;
+  font-size: 10.5px;
+  color: #ffc107;
+}
+
+/* ==================== ИМПОРТ SWAGGER ==================== */
+.sw-error {
+  margin-top: 12px;
+  padding: 8px 10px;
+  background: rgba(220, 53, 69, .12);
+  border: 1px solid #dc3545;
+  border-radius: var(--radius);
+  color: #ff8080;
+  font-size: 12px;
+}
+
+.sw-head { margin-bottom: 10px; }
+.sw-api-title { font-size: 15px; font-weight: 700; color: var(--text-main); }
+.sw-api-meta { font-size: 10.5px; color: var(--text-dim); word-break: break-all; }
+
+.sw-endpoints {
+  max-height: 46vh;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 4px;
+}
+.sw-empty { color: var(--text-dim); text-align: center; padding: 20px; font-size: 12px; }
+
+.sw-group { margin-bottom: 6px; }
+.sw-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--bg-input);
+  border-radius: 4px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.sw-group-check { cursor: pointer; accent-color: var(--accent); }
+.sw-group-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
+.sw-ep {
+  display: grid;
+  grid-template-columns: 18px 62px minmax(120px, 1.3fr) minmax(80px, 1.6fr) 16px;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 8px 4px 18px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 11.5px;
+}
+.sw-ep:hover { background: var(--bg-input); }
+.sw-ep.sw-deprecated { opacity: .5; }
+.sw-ep.sw-deprecated .sw-path { text-decoration: line-through; }
+
+.sw-ep-check { cursor: pointer; accent-color: var(--accent); }
+.sw-method {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-align: center;
+  border: 1px solid;
+  border-radius: 3px;
+  padding: 1px 0;
+}
+.sw-path {
+  font-family: 'Consolas', monospace;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sw-summary {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sw-badge { color: var(--accent); font-size: 10px; }
+
+/* ==================== ЛОГИ ==================== */
+.log-output {
+  background: var(--bg-app);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 6px;
+  height: 52vh;
+  overflow-y: auto;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.log-row {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--border-color);
+  flex-wrap: wrap;
+}
+.log-row:last-child { border-bottom: none; }
+.log-row:hover { background: var(--bg-input); }
+
+.log-time {
+  color: var(--text-dim);
+  flex-shrink: 0;
+  font-size: 10.5px;
+  opacity: .8;
+}
+
+.log-source {
+  color: var(--accent);
+  flex-shrink: 0;
+  font-size: 10.5px;
+  padding: 0 5px;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+}
+
+.log-text {
+  flex: 1;
+  min-width: 200px;
+  word-break: break-word;
+  white-space: pre-wrap;
+  color: var(--text-main);
+}
+
+.log-stack {
+  flex-basis: 100%;
+  margin-left: 20px;
+}
+.log-stack summary {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 10px;
+  user-select: none;
+}
+.log-stack summary:hover { color: var(--accent); }
+.log-stack pre {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  background: var(--bg-panel);
+  border-radius: 4px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+/* Бейдж количества ошибок на кнопке настроек */
+.error-badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  background: #dc3545;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 8px;
+  min-width: 14px;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* Подпись расшифровки статус-кода */
+.status-meaning {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-weight: 400;
+  margin-left: 6px;
 }
 
 .response-status {
@@ -408,14 +970,16 @@ body {
   position: fixed;
   background: var(--bg-panel);
   border: 1px solid var(--border-color);
-  z-index: 2000;
+  /* Ниже модалок Bootstrap (backdrop 1050) */
+  z-index: 1030;
 }
 
 /* ==================== HOVER-ПРЕВЬЮ (карточки коллекций / вкладки) ==================== */
 .hover-preview {
   display: none;
   position: fixed;
-  z-index: 3000;
+  /* Ниже модалок Bootstrap (backdrop 1050) */
+  z-index: 1035;
   max-width: 320px;
   background: var(--bg-panel);
   border: 1px solid var(--border-color);
