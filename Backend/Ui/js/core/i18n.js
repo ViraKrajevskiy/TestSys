@@ -57,7 +57,7 @@ window.App = window.App || {};
 
       // Вкладки / запрос
       newTab: "Новая вкладка (Ctrl+T)", closeAllTabs: "Закрыть все вкладки",
-      closeTab: "Закрыть вкладку", closeOthers: "Закрыть остальные",
+      closeTab: "Закрыть вкладку", closeOthers: "Закрыть остальные", renameTab: "Переименовать (F2)",
       openInWindow: "Открыть в отдельном окне", noTabs: "Нет открытых вкладок",
       send: "Отправить", params: "Параметры", headers: "Заголовки", body: "Тело",
       method: "Метод", requestName: "Название", key: "Ключ", value: "Значение",
@@ -210,7 +210,7 @@ window.App = window.App || {};
       cleanupBackupsConfirm: "Delete all saved versions except the three most recent?",
 
       newTab: "New tab (Ctrl+T)", closeAllTabs: "Close all tabs",
-      closeTab: "Close tab", closeOthers: "Close others",
+      closeTab: "Close tab", closeOthers: "Close others", renameTab: "Rename (F2)",
       openInWindow: "Open in separate window", noTabs: "No open tabs",
       send: "Send", params: "Params", headers: "Headers", body: "Body",
       method: "Method", requestName: "Name", key: "Key", value: "Value",

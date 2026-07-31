@@ -29,6 +29,18 @@
       else if (action === "close-others") App.closeOtherTabs(id);
       else if (action === "close-all") App.closeAllTabs();
       else if (action === "detach") App.detachTab(id);
+      else if (action === "rename") App.startRenamingTab(id);
+    });
+
+    // F2 переименовывает активную вкладку — только если фокус не в поле ввода
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "F2") return;
+      const t = e.target.tagName;
+      if (t === "INPUT" || t === "TEXTAREA" || t === "SELECT") return;
+      if (App.state.activeTabId != null) {
+        e.preventDefault();
+        App.startRenamingTab(App.state.activeTabId);
+      }
     });
   };
 })();

@@ -145,6 +145,50 @@
     });
   };
 
+  /**
+   * Inline-переименование вкладки. Пустое значение сбрасывает
+   * на автозаголовок из URL.
+   */
+  App.startRenamingTab = function (tabId) {
+    const pill = document.querySelector(`.tab-pill[data-tab-id="${tabId}"]`);
+    if (!pill) return;
+    const span = pill.querySelector(".tab-title");
+    if (!span || span.dataset.editing === "1") return;
+
+    const tab = App.state.tabs.find((t) => t.id === tabId);
+    if (!tab) return;
+
+    span.dataset.editing = "1";
+    const original = App.tabTitle(tab);
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "tab-title tab-title-edit";
+    input.value = tab.title || original;
+    input.placeholder = original;
+    input.maxLength = 60;
+
+    span.replaceWith(input);
+    input.focus();
+    input.select();
+
+    let done = false;
+    const finish = (save) => {
+      if (done) return;
+      done = true;
+      if (save) App.renameTab(tabId, input.value);
+      else App.renderTabBar();   // просто перерисовать — вернуть исходный вид
+    };
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter")  { e.preventDefault(); finish(true); }
+      if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    });
+    input.addEventListener("blur", () => finish(true));
+    // Клик по инпуту не должен уходить в переключение вкладки
+    input.addEventListener("click", (e) => e.stopPropagation());
+    input.addEventListener("mousedown", (e) => e.stopPropagation());
+  };
+
   App.renderTabBar = function () {
     const container = document.getElementById("tabs-container");
     const template = document.getElementById("tab-pill-template");
@@ -168,6 +212,12 @@
       const title = node.querySelector(".tab-title");
       title.textContent = App.tabTitle(tab);
       title.title = tab.url || App.tabTitle(tab);
+
+      // Двойной клик по заголовку — переименовать. В Postman так же.
+      title.addEventListener("dblclick", (e) => {
+        e.stopPropagation();
+        App.startRenamingTab(tab.id);
+      });
 
       const detachBtn = node.querySelector(".tab-detach-btn");
       if (App.state.isDetachedWindow) {

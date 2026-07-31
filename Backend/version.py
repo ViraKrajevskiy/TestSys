@@ -9,7 +9,7 @@ version.py — версия приложения.
 __version__ = "1.0.0"
 
 # Репозиторий для проверки обновлений: "владелец/репозиторий"
-GITHUB_REPO = "Vira/TestSys"
+GITHUB_REPO = "ViraKrajevskiy/TestSys"
 
 # Имя файла в релизе, который считается приложением
 ASSET_NAME = "TestSys.exe"

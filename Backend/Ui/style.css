@@ -240,6 +240,20 @@ body {
   box-sizing: border-box;
 }
 
+.tab-title-edit {
+  border: none !important;
+  outline: 1px solid var(--accent);
+  background: var(--bg-app);
+  color: var(--text-main);
+  border-radius: 3px;
+  font-size: 0.85rem;
+  padding: 1px 4px;
+  min-width: 0;
+  flex: 1;
+  font-family: inherit;
+}
+.tab-title-edit::placeholder { color: var(--text-dim); }
+
 .tab-title {
   overflow: hidden;
   text-overflow: ellipsis;

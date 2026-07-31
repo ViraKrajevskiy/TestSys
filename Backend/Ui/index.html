@@ -82,11 +82,15 @@
 
 <!-- Кастомное контекстное меню для вкладок -->
 <ul id="tab-context-menu" class="dropdown-menu">
-  <li><button class="dropdown-item" data-action="close">Закрыть вкладку</button></li>
-  <li><button class="dropdown-item" data-action="close-others">Закрыть остальные</button></li>
-  <li><button class="dropdown-item" data-action="close-all">Закрыть все вкладки</button></li>
+  <li><button class="dropdown-item" data-action="rename" data-i18n="renameTab">
+    <i class="bi bi-pencil me-1"></i> Переименовать
+  </button></li>
   <li><hr class="dropdown-divider"></li>
-  <li><button class="dropdown-item" data-action="detach">
+  <li><button class="dropdown-item" data-action="close" data-i18n="closeTab">Закрыть вкладку</button></li>
+  <li><button class="dropdown-item" data-action="close-others" data-i18n="closeOthers">Закрыть остальные</button></li>
+  <li><button class="dropdown-item" data-action="close-all" data-i18n="closeAllTabs">Закрыть все вкладки</button></li>
+  <li><hr class="dropdown-divider"></li>
+  <li><button class="dropdown-item" data-action="detach" data-i18n="openInWindow">
     <i class="bi bi-box-arrow-up-right me-1"></i> Открыть в отдельном окне
   </button></li>
 </ul>

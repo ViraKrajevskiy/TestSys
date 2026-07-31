@@ -85,13 +85,17 @@ window.App = window.App || {};
     }
   };
 
+  /**
+   * Автозаголовок — если пользователь сам не задал имя вкладки.
+   * tab.title имеет приоритет: пользовательское имя не должно
+   * перезаписываться при изменении URL.
+   */
   App.tabTitle = function (tab) {
-    if (tab.method === "RANDOMIZER") {
-      return tab.title || "🎲 Randomizer";
-    }
-    if (tab.method === "USERS") {
-      return tab.title || "👥 Users";
-    }
+    if (tab.title && tab.title.trim()) return tab.title;
+
+    if (tab.method === "RANDOMIZER") return "🎲 Randomizer";
+    if (tab.method === "USERS")      return "👥 Users";
+
     if (tab.crudAction) {
       const labels = { list: "Users", read: "User", create: "Create", update: "Update", delete: "Delete" };
       if (labels[tab.crudAction]) return labels[tab.crudAction];
@@ -102,6 +106,17 @@ window.App = window.App || {};
     } catch {
       return tab.url || "Request";
     }
+  };
+
+  /**
+   * Переименовать вкладку. Пустое имя — сбросить на автозаголовок.
+   */
+  App.renameTab = function (tabId, newTitle) {
+    const tab = App.state.tabs.find((t) => t.id === tabId);
+    if (!tab) return;
+    const name = (newTitle || "").trim();
+    tab.title = name || "";     // "" = использовать автозаголовок
+    App.renderTabBar();
   };
 
   App.syncTabOrderFromDom = function () {
