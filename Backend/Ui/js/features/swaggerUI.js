@@ -130,17 +130,35 @@ window.App = window.App || {};
     document.getElementById("sw-meta").textContent =
       `${parsed.version} · ${parsed.endpoints.length} ${App.t("endpoints")} · ${App.escapeHtml(source || "")}`;
 
+    // Если спека не указала servers (частый случай для drf-spectacular),
+    // подставляем origin адреса, откуда её скачали — иначе запросы
+    // пойдут на дефолтный {{baseUrl}} = адрес нашего же бэкенда.
+    const servers = [...parsed.servers];
+    const inferred = _originFromSource(source);
+    if (!servers.length && inferred) servers.push(inferred);
+    if (!servers.length) servers.push("");
+
     const sel = document.getElementById("sw-server");
     sel.innerHTML = "";
-    const servers = parsed.servers.length ? parsed.servers : [""];
     servers.forEach(s => {
       const o = document.createElement("option");
       o.value = s; o.textContent = s || App.t("notSpecified");
       sel.appendChild(o);
     });
+    // Если добавили угаданный сервер — сразу его и выбираем
+    if (inferred && !parsed.servers.length) sel.value = inferred;
 
     _renderEndpoints();
     _step(2);
+  }
+
+  /** Из URL, откуда скачали спеку, получить origin: http://host:port */
+  function _originFromSource(source) {
+    if (!source) return "";
+    try {
+      const u = new URL(source);
+      return u.origin;   // http://127.0.0.1:8001
+    } catch { return ""; }
   }
 
   // ============================================================

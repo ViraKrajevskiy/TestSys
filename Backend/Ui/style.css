@@ -936,6 +936,139 @@ body {
 .upd-progress-bar { height: 100%; width: 0; background: var(--accent); transition: width .25s; }
 .upd-progress-text { font-size: 10.5px; color: var(--text-dim); margin-top: 3px; text-align: right; }
 
+
+/* ==================== РЕДАКТОР СКРИПТОВ (Pre-request / Tests) ==================== */
+.script-editor {
+  display: flex; flex-direction: column; gap: 8px;
+  border: 1px solid var(--border-color); border-radius: var(--radius);
+  padding: 10px; background: var(--bg-panel);
+}
+.script-head { border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
+.script-title { font-size: 13px; font-weight: 600; color: var(--accent); }
+.script-title i { margin-right: 6px; }
+.script-hint { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
+
+.script-toolbar { display: flex; align-items: center; gap: 8px; }
+.script-btn {
+  background: var(--bg-input); color: var(--text-main);
+  border: 1px solid var(--border-color); border-radius: 4px;
+  padding: 4px 10px; font-size: 11.5px; cursor: pointer;
+  transition: all .12s;
+}
+.script-btn:hover { border-color: var(--accent); color: var(--accent); }
+.script-snippets-label { font-size: 10.5px; color: var(--text-dim); margin-left: auto; }
+.script-snippets {
+  background: var(--bg-input); color: var(--text-main);
+  border: 1px solid var(--border-color); border-radius: 4px;
+  padding: 3px 6px; font-size: 11px; max-width: 220px;
+}
+
+.script-code {
+  width: 100%; min-height: 240px; padding: 10px;
+  background: var(--bg-app); color: var(--text-main);
+  border: 1px solid var(--border-color); border-radius: 4px;
+  font-family: 'Consolas', 'Courier New', monospace; font-size: 12.5px;
+  line-height: 1.5; resize: vertical; tab-size: 2;
+}
+.script-code:focus { outline: none; border-color: var(--accent); }
+.script-code::placeholder { color: var(--text-dim); }
+
+.script-result {
+  border: 1px solid var(--border-color); border-radius: 4px;
+  padding: 8px 10px; background: var(--bg-input); font-size: 12px;
+}
+.script-err {
+  color: #ff8080; background: rgba(220,53,69,.08);
+  padding: 6px 8px; border-radius: 3px; margin-bottom: 6px;
+}
+.script-ok { color: #22c55e; }
+.script-summary { font-weight: 600; margin-bottom: 4px; }
+.script-tests { list-style: none; padding: 0; margin: 0; font-size: 11.5px; }
+.script-tests li {
+  padding: 3px 0; border-bottom: 1px solid var(--border-color);
+}
+.script-tests li:last-child { border-bottom: none; }
+.script-tests li.ok { color: var(--text-main); }
+.script-tests li.fail { color: #ff8080; }
+.script-tests li i { margin-right: 6px; }
+.script-err-msg {
+  display: block; padding-left: 22px; font-size: 10.5px;
+  color: var(--text-dim); font-style: italic;
+}
+
+/* Значок точки/бейджа в sub-nav */
+.sub-dot { color: var(--accent); font-size: 8px; vertical-align: middle; }
+.sub-badge {
+  display: inline-block; font-size: 9.5px; font-weight: 700;
+  padding: 1px 6px; border-radius: 8px; margin-left: 4px;
+}
+.sub-ok   { background: #22c55e22; color: #22c55e; }
+.sub-fail { background: #dc354522; color: #ff8080; }
+
+/* ==================== КОНСОЛЬ + REPL ==================== */
+.script-console {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  height: 0; overflow: hidden;
+  background: var(--bg-panel); border-top: 2px solid var(--accent);
+  z-index: 1040; display: flex; flex-direction: column;
+  transition: height .18s ease;
+  box-shadow: 0 -8px 24px rgba(0,0,0,.4);
+}
+.script-console.open { height: 40vh; min-height: 220px; }
+
+.console-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 12px; background: var(--bg-input);
+  border-bottom: 1px solid var(--border-color); flex-shrink: 0;
+}
+.console-title { font-size: 12px; font-weight: 600; color: var(--text-main); }
+.console-actions button {
+  background: none; border: none; color: var(--text-dim);
+  padding: 4px 8px; border-radius: 3px; cursor: pointer;
+}
+.console-actions button:hover { color: var(--accent); background: var(--bg-panel); }
+
+.console-output {
+  flex: 1; overflow-y: auto; padding: 6px 8px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 11.5px; line-height: 1.55;
+}
+.console-line {
+  display: flex; gap: 8px; padding: 2px 4px; align-items: baseline;
+  border-radius: 2px;
+}
+.console-line:hover { background: var(--bg-input); }
+.ln-time { color: var(--text-dim); font-size: 10px; flex-shrink: 0; opacity: .7; }
+.ln-source {
+  font-size: 9.5px; text-transform: uppercase; letter-spacing: .04em;
+  padding: 0 5px; border-radius: 2px; flex-shrink: 0;
+  background: var(--bg-input); color: var(--text-dim);
+}
+.ln-pre  { color: #a855f7; border: 1px solid #a855f7; background: transparent; }
+.ln-test { color: #22c55e; border: 1px solid #22c55e; background: transparent; }
+.ln-repl { color: var(--accent); border: 1px solid var(--accent); background: transparent; }
+.ln-app  { color: var(--text-dim); }
+.ln-icon { flex-shrink: 0; }
+.ln-text { color: var(--text-main); word-break: break-word; white-space: pre-wrap; flex: 1; }
+
+.kind-error .ln-text { color: #ff8080; }
+.kind-warn  .ln-text { color: #ffc107; }
+.kind-test-pass .ln-text { color: #22c55e; }
+.kind-test-fail .ln-text { color: #ff8080; }
+
+.repl-line {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px; background: var(--bg-app);
+  border-top: 1px solid var(--border-color); flex-shrink: 0;
+}
+.repl-prompt { color: var(--accent); font-family: monospace; font-weight: 700; }
+.repl-input {
+  flex: 1; background: transparent; border: none; outline: none;
+  color: var(--text-main); font-family: 'Consolas', monospace;
+  font-size: 12.5px;
+}
+.repl-input::placeholder { color: var(--text-dim); opacity: .6; }
+
 /* ==================== ЛОГИ ==================== */
 .log-output {
   background: var(--bg-app);

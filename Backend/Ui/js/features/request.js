@@ -5,6 +5,20 @@ App.sendRequest = async function (tabId) {
   if (!tab || !tab.url.trim()) return;
   if (!window.pywebview) return;
 
+  // Pre-request script — ДО резолва переменных, чтобы скрипт мог
+  // добавить/поменять переменные, заголовки и тело.
+  if (tab.preScript && App.runScript) {
+    const pre = App.runScript(tab.preScript, { source: "pre", tab });
+    if (!pre.ok) {
+      tab.response = {
+        ok: false,
+        error: (App.t ? App.t("preScriptFailed") : "Pre-request failed") + ":\n" + pre.error,
+      };
+      App.renderTabContent();
+      return;
+    }
+  }
+
   // Резолв переменных: статические {{baseUrl}} + динамические {{$randomEmail}}.
   // Делается ОДИН раз на отправку — значения фиксируются, чтобы в логах и
   // метриках был тот же URL, который реально ушёл на сервер.
@@ -82,6 +96,15 @@ App.sendRequest = async function (tabId) {
       err && err.stack ? err.stack : "");
   }
   tab.sending = false;
+
+  // Test-скрипт после ответа — assertions идут в tab.lastTests
+  if (tab.testScript && tab.response && App.runScript) {
+    tab.lastTests = App.runScript(tab.testScript, {
+      source: "test", tab, response: tab.response,
+    });
+  } else {
+    tab.lastTests = null;
+  }
 
   // Логируем неуспешные ответы
   if (App.logError && tab.response) {

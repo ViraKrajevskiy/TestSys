@@ -217,6 +217,39 @@ def stop_backend():
             pass
 
 
+# Порты, которые Chromium/Edge считает «опасными» и блокирует.
+# Полный список: chromium.googlesource.com/chromium/src/+/master/net/base/port_util.cc
+# 4045 — NFS lockd, из-за него и была ошибка ERR_UNSAFE_PORT.
+_CHROMIUM_UNSAFE_PORTS = frozenset([
+    1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77,
+    79, 87, 95, 101, 102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123,
+    135, 137, 139, 143, 161, 179, 389, 427, 465, 512, 513, 514, 515, 526,
+    530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993,
+    995, 1719, 1720, 1723, 2049, 3659, 4045, 5060, 5061, 6000, 6566, 6665,
+    6666, 6667, 6668, 6669, 6697, 10080,
+])
+
+
+def _find_safe_port(start=17800, tries=200):
+    """
+    Найти свободный TCP-порт, который не входит в блок-лист Chromium.
+    Иначе Edge WebView2 отдаст ERR_UNSAFE_PORT — как это случилось на 4045.
+    """
+    import socket
+    for offset in range(tries):
+        port = start + offset
+        if port > 65535 or port in _CHROMIUM_UNSAFE_PORTS:
+            continue
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("127.0.0.1", port))
+                return port
+        except OSError:
+            continue
+    # Крайний случай — отдаём стартовый, пусть pywebview падает с внятной ошибкой
+    return start
+
+
 def main():
     print("=" * 50)
     print("  TestSys запускается")
@@ -256,7 +289,11 @@ def main():
             height=820,
             min_size=(900, 600),
         )
-        webview.start()
+        # Явно выбираем HTTP-порт для встроенного сервера pywebview.
+        # По умолчанию он берёт случайный — иногда попадает в «опасные»
+        # порты Chromium (4045, 6000, 6666, ...) и Edge отдаёт ERR_UNSAFE_PORT.
+        # 17800+ — сильно выше системных, вне блок-листа, вне HTTP-стандарта.
+        webview.start(http_port=_find_safe_port(17800))
     except Exception as e:
         print(f"[ERROR] Ошибка UI: {e}")
         traceback.print_exc()

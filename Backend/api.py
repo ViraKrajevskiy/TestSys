@@ -903,54 +903,151 @@ class Api:
     # ========== SWAGGER / OPENAPI ==========
     def fetch_swagger(self, url):
         """
-        Скачать спецификацию OpenAPI.
-        Тянем из Python, а не из JS — в вебвью запрос к чужому домену
-        упёрся бы в CORS.
+        Скачать спецификацию OpenAPI/Swagger.
+
+        Пробуем несколько мест сразу, потому что фреймворки называют их по-разному:
+          * FastAPI     — /openapi.json
+          * Django DRF (drf-spectacular) — /api/schema/  (по умолчанию YAML)
+          * Django DRF (drf-yasg)        — /swagger.json, /swagger/?format=openapi
+          * Django Ninja                 — /api/openapi.json
+          * ASP.NET     — /swagger/v1/swagger.json
+          * Spring      — /v3/api-docs
+
+        Тянем из Python, а не из JS — иначе упрёмся в CORS.
         """
         try:
             u = url.strip()
             if not u.lower().startswith(("http://", "https://")):
                 return {"ok": False, "error": "URL должен начинаться с http:// или https://"}
 
-            candidates = [u]
-            # Часто дают адрес UI Swagger — подставим типичные пути к самой спеке
-            if not u.rstrip("/").endswith((".json", ".yaml", ".yml")):
-                base = u.rstrip("/")
-                for suffix in ("/openapi.json", "/swagger.json", "/v3/api-docs",
-                               "/api-docs", "/swagger/v1/swagger.json"):
-                    candidates.append(base + suffix)
-                # .../swagger-ui/  ->  .../swagger.json рядом
-                if "/swagger" in base:
-                    candidates.append(base.rsplit("/swagger", 1)[0] + "/swagger.json")
+            candidates = list(self._swagger_candidates(u))
+
+            headers = {
+                # Многие фреймворки без Accept возвращают HTML или 406.
+                # Django DRF без этого отдал бы страницу браузерного UI.
+                "Accept": "application/json, application/yaml, text/yaml, */*;q=0.8",
+                "User-Agent": "TestSys/1.0 (+swagger-import)",
+            }
 
             tried = []
             for cand in candidates:
                 try:
-                    r = requests.get(cand, timeout=15, headers={"Accept": "application/json"})
+                    r = requests.get(cand, timeout=15, headers=headers, allow_redirects=True)
                     tried.append(f"{cand} → {r.status_code}")
                     if not r.ok:
                         continue
+
                     text = r.text
-                    # Убедимся, что это похоже на спеку, а не HTML-страница
-                    stripped = text.lstrip()
-                    if not stripped.startswith("{"):
+                    if not text or len(text) < 20:
                         continue
-                    if '"openapi"' not in text and '"swagger"' not in text:
+
+                    # Пришёл HTML (Swagger UI) — пропускаем, нам нужен JSON/YAML
+                    stripped = text.lstrip().lower()
+                    if stripped.startswith(("<!doctype", "<html")):
                         continue
+
+                    parsed = self._parse_spec_text(text)
+                    if not parsed:
+                        continue
+
                     logger.info(f"Swagger загружен: {cand} ({len(text)} байт)")
-                    return {"ok": True, "content": text, "url": cand}
+                    # Отдаём в UI уже как JSON — парсер на стороне JS его разберёт
+                    return {"ok": True, "content": parsed, "url": cand}
                 except Exception as e:
                     tried.append(f"{cand} → {e}")
                     continue
 
             return {
                 "ok": False,
-                "error": "Спецификация не найдена по адресу",
-                "tried": tried[:6],
+                "error": "Спецификация не найдена по адресу. Проверьте, что сервер отдаёт "
+                         "OpenAPI JSON/YAML — например /api/schema/, /openapi.json или /swagger.json",
+                "tried": tried[:10],
             }
         except Exception as e:
             logger.error(f"fetch_swagger failed: {e}")
             return {"ok": False, "error": str(e)}
+
+    def _swagger_candidates(self, u):
+        """Список URL-кандидатов, где может лежать спецификация."""
+        seen = set()
+
+        def push(x):
+            if x and x not in seen:
+                seen.add(x)
+                yield x
+
+        # 1. Исходный адрес — как есть
+        yield from push(u)
+
+        low = u.lower().rstrip("/")
+        base = u.rstrip("/")
+
+        # Уже прямая ссылка на файл — дальше не варьируем
+        if low.endswith((".json", ".yaml", ".yml")):
+            return
+
+        # 2. Явные форматы через query — универсальный трюк DRF/Ninja
+        sep = "&" if "?" in base else "?"
+        for q in ("format=openapi", "format=openapi-json", "format=json", "format=yaml"):
+            yield from push(base + sep + q)
+
+        # 3. Стандартные суффиксы поверх текущего пути
+        suffixes = (
+            "/openapi.json", "/openapi.yaml",
+            "/swagger.json", "/swagger.yaml",
+            "/schema/", "/schema.json", "/schema.yaml",
+            "/api-docs", "/api-docs.json",
+            "/v3/api-docs", "/v2/api-docs",
+            "/swagger/v1/swagger.json",
+            "/?format=openapi", "/?format=json",
+        )
+        for suf in suffixes:
+            yield from push(base + suf)
+
+        # 4. То же от родительских путей — на случай, если дали адрес UI:
+        #    /api/docs/  →  пробуем /api/schema/, /api/openapi.json и т.д.
+        #    /api/       →  пробуем /openapi.json
+        from urllib.parse import urlparse, urlunparse
+        pr = urlparse(u.split("?")[0])
+        parts = [p for p in pr.path.split("/") if p]
+        while parts:
+            parts.pop()
+            parent = urlunparse((pr.scheme, pr.netloc, "/" + "/".join(parts), "", "", ""))
+            for suf in ("/openapi.json", "/swagger.json", "/schema/",
+                        "/schema.json", "/api-docs", "/v3/api-docs",
+                        "/swagger/v1/swagger.json"):
+                yield from push(parent.rstrip("/") + suf)
+
+    def _parse_spec_text(self, text):
+        """
+        Привести содержимое к JSON-строке. Принимаем и JSON, и YAML —
+        Django DRF по умолчанию отдаёт YAML, и это норма.
+        """
+        stripped = text.lstrip()
+
+        # Уже JSON
+        if stripped.startswith(("{", "[")):
+            try:
+                obj = json.loads(text)
+            except Exception:
+                return None
+        else:
+            # YAML — но только если PyYAML установлен. В сборке он бывает не всегда.
+            try:
+                import yaml   # type: ignore
+                obj = yaml.safe_load(text)
+            except ImportError:
+                logger.warning("Спецификация в YAML, но PyYAML не установлен. "
+                               "Попросите сервер вернуть JSON (?format=json).")
+                return None
+            except Exception:
+                return None
+
+        if not isinstance(obj, dict):
+            return None
+        if "openapi" not in obj and "swagger" not in obj:
+            return None
+        return json.dumps(obj)
 
     def save_text_file(self, filename, content, file_types=None):
         """

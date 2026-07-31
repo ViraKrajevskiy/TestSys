@@ -16,6 +16,9 @@ window.App = window.App || {};
       sending: false,
       response: null,
       userAgent: "",
+      preScript: "",       // выполняется перед отправкой
+      testScript: "",      // выполняется после ответа
+      lastTests: null,     // результаты последнего запуска pm.test
       crudEntity: null,
       crudAction: null,
     };

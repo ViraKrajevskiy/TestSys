@@ -40,6 +40,12 @@ window.App = window.App || {};
         <li class="nav-item"><button class="nav-link ${sub("params")}" data-sub="params">${App.t("params")}</button></li>
         <li class="nav-item"><button class="nav-link ${sub("headers")}" data-sub="headers">${App.t("headers")}</button></li>
         ${hasBodyMethod ? '<li class="nav-item"><button class="nav-link ' + sub("body") + '" data-sub="body">' + App.t("body") + '</button></li>' : ""}
+        <li class="nav-item"><button class="nav-link ${sub("pre")}" data-sub="pre">
+          ${App.t("preRequest")}${tab.preScript ? ' <span class="sub-dot">●</span>' : ""}
+        </button></li>
+        <li class="nav-item"><button class="nav-link ${sub("tests")}" data-sub="tests">
+          ${App.t("tests")}${_testsBadge(tab)}
+        </button></li>
       </ul>
       <div class="ua-row mb-2" style="display:flex;gap:6px;align-items:center;">
         <label style="font-size:11px;color:var(--text-dim);white-space:nowrap;flex-shrink:0;">User-Agent:</label>
@@ -181,6 +187,13 @@ window.App = window.App || {};
 
   App.renderSubTabContent = function (tab) {
     const container = document.getElementById("sub-tab-content");
+
+    // ---- Pre-request / Tests: редакторы скриптов ----
+    if (tab.activeSubTab === "pre" || tab.activeSubTab === "tests") {
+      _renderScriptEditor(container, tab, tab.activeSubTab);
+      return;
+    }
+
     if (tab.activeSubTab === "body") {
       container.innerHTML =
         '<div class="body-editor-wrap">' +
@@ -188,9 +201,10 @@ window.App = window.App || {};
         '<span class="text-secondary">JSON Body</span>' +
         '<div style="display:flex;gap:6px;align-items:center;">' +
         '<button class="dynvar-btn" id="body-dynvar-btn" title="' + App.t("dynamicVars") + '">{$}</button>' +
-        (tab.crudEntity === "user"
-          ? '<button class="btn btn-sm btn-outline-secondary" id="body-form-btn"><i class="bi bi-ui-checks"></i> Form</button>'
-          : "") +
+        // Кнопка Form раскрывает JSON тела в форму с полями — работает
+        // с любым JSON-объектом, а не только с users. Поля определяются
+        // автоматически из содержимого body.
+        '<button class="btn btn-sm btn-outline-secondary" id="body-form-btn" title="' + App.t("editAsForm") + '"><i class="bi bi-ui-checks"></i> Form</button>' +
         "</div></div>" +
         '<textarea class="form-control body-textarea" id="body-textarea" rows="10" placeholder=\'{"key": "value"}\'>' +
         App.escapeHtml(tab.body) +
@@ -217,12 +231,19 @@ window.App = window.App || {};
       const formBtn = document.getElementById("body-form-btn");
       if (formBtn) {
         formBtn.addEventListener("click", () => {
-          const entity = App.tryParseJson(tab.body) || {};
+          const parsed = App.tryParseJson(tab.body);
+          if (parsed === null && (tab.body || "").trim()) {
+            App.showAlert(App.t("errInvalidJsonBody"));
+            return;
+          }
+          const entity = (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+            ? parsed : {};
           App.openEntityModal(
             tab.method === "POST" ? "create" : "edit",
             entity,
             App.getEntityBaseUrl(tab),
-            tab.id
+            tab.id,
+            tab,   // передаём вкладку — из неё возьмётся Swagger-схема, если есть
           );
         });
       }
@@ -326,6 +347,160 @@ window.App = window.App || {};
       rowsContainer.appendChild(node);
     });
   };
+
+  // ============================================================
+  // РЕДАКТОР СКРИПТОВ (Pre-request / Tests)
+  // ============================================================
+  const PRE_SNIPPETS = [
+    { label: "Set variable",  code: 'pm.variables.set("myVar", "value");' },
+    { label: "Random data",   code: 'pm.variables.set("nonce", Date.now());\npm.request.body = JSON.stringify({ id: Date.now() });' },
+    { label: "Bearer token",  code: 'pm.request.headers.set("Authorization", "Bearer " + pm.variables.get("token"));' },
+    { label: "Timestamp header", code: 'pm.request.headers.set("X-Timestamp", new Date().toISOString());' },
+  ];
+
+  const TEST_SNIPPETS = [
+    { label: "Status 200",    code: 'pm.test("статус 200", () => pm.response.to.have.status(200));' },
+    { label: "JSON body",     code: 'pm.test("тело — JSON", () => {\n  const data = pm.response.json();\n  expect(data).toBeDefined();\n});' },
+    { label: "Save token",    code: 'pm.test("токен получен", () => {\n  const t = pm.response.json().access_token;\n  expect(t).toBeDefined();\n  pm.variables.set("token", t);\n});' },
+    { label: "Save id",       code: 'const data = pm.response.json();\npm.variables.set("lastId", data.id);' },
+    { label: "Response time", code: 'pm.test("отвечает быстро", () => {\n  expect(pm.response.responseTime).toBeLessThan(500);\n});' },
+    { label: "Has header",    code: 'pm.test("есть Content-Type", () => pm.response.to.have.header("Content-Type"));' },
+  ];
+
+  function _renderScriptEditor(container, tab, kind) {
+    const isPre = kind === "pre";
+    const field = isPre ? "preScript" : "testScript";
+    const title = isPre ? App.t("preRequestTitle") : App.t("testsTitle");
+    const hint  = isPre ? App.t("preRequestHint")  : App.t("testsHint");
+    const snippets = isPre ? PRE_SNIPPETS : TEST_SNIPPETS;
+
+    container.innerHTML = `
+      <div class="script-editor">
+        <div class="script-head">
+          <div class="script-title">
+            <i class="bi bi-${isPre ? "lightning" : "check2-circle"}"></i>
+            ${App.escapeHtml(title)}
+          </div>
+          <div class="script-hint">${App.escapeHtml(hint)}</div>
+        </div>
+
+        <div class="script-toolbar">
+          <button class="script-btn" id="script-run"><i class="bi bi-play-fill"></i> ${App.t("runNow")}</button>
+          <button class="script-btn" id="script-clear"><i class="bi bi-trash3"></i> ${App.t("clear")}</button>
+          <span class="script-snippets-label">${App.t("snippets")}:</span>
+          <select id="script-snippets" class="script-snippets">
+            <option value="">${App.t("pickSnippet")}</option>
+            ${snippets.map((s, i) => `<option value="${i}">${App.escapeHtml(s.label)}</option>`).join("")}
+          </select>
+        </div>
+
+        <textarea id="script-code" class="script-code" spellcheck="false"
+                  placeholder="${App.escapeAttr(isPre ? PRE_EXAMPLE : TEST_EXAMPLE)}">${App.escapeHtml(tab[field] || "")}</textarea>
+
+        <div id="script-result" class="script-result" style="display:none;"></div>
+      </div>`;
+
+    const ta = document.getElementById("script-code");
+    ta.addEventListener("input", (e) => { tab[field] = e.target.value; });
+    // Tab внутри редактора вставляет отступ, а не переключает фокус
+    ta.addEventListener("keydown", (e) => {
+      if (e.key !== "Tab") return;
+      e.preventDefault();
+      const s = ta.selectionStart, en = ta.selectionEnd;
+      ta.value = ta.value.slice(0, s) + "  " + ta.value.slice(en);
+      ta.selectionStart = ta.selectionEnd = s + 2;
+      tab[field] = ta.value;
+    });
+
+    document.getElementById("script-snippets").addEventListener("change", (e) => {
+      const i = +e.target.value;
+      if (isNaN(i)) return;
+      const snippet = snippets[i];
+      if (!snippet) return;
+      const insert = (ta.value.trim() ? "\n\n" : "") + snippet.code;
+      ta.value += insert;
+      tab[field] = ta.value;
+      e.target.value = "";
+    });
+
+    document.getElementById("script-run").addEventListener("click", () => {
+      _runScriptFromEditor(tab, kind);
+    });
+
+    document.getElementById("script-clear").addEventListener("click", () => {
+      ta.value = "";
+      tab[field] = "";
+      document.getElementById("script-result").style.display = "none";
+    });
+
+    // Показать результаты последних тестов, если они есть
+    if (kind === "tests" && tab.lastTests) _showScriptResult(tab.lastTests);
+  }
+
+  const PRE_EXAMPLE = `// Выполняется перед отправкой запроса
+// Примеры:
+//   pm.variables.set("token", "abc123");
+//   pm.request.headers.set("Authorization", "Bearer " + pm.variables.get("token"));
+//   pm.request.body = JSON.stringify({ id: Date.now() });`;
+
+  const TEST_EXAMPLE = `// Выполняется после получения ответа
+// Примеры:
+//   pm.test("статус 200", () => pm.response.to.have.status(200));
+//   pm.test("есть id", () => {
+//     expect(pm.response.json().id).toBeDefined();
+//   });
+//   pm.variables.set("lastId", pm.response.json().id);`;
+
+  function _runScriptFromEditor(tab, kind) {
+    const code = kind === "pre" ? tab.preScript : tab.testScript;
+    if (!code.trim()) return;
+
+    const opts = { source: kind === "pre" ? "pre" : "test", tab };
+    if (kind === "tests" && tab.response && tab.response.ok) {
+      opts.response = tab.response;
+    }
+    const res = App.runScript(code, opts);
+    _showScriptResult(res);
+    if (kind === "tests") tab.lastTests = res;
+  }
+
+  function _showScriptResult(res) {
+    const box = document.getElementById("script-result");
+    if (!box) return;
+    box.style.display = "";
+
+    let html = "";
+    if (!res.ok && res.error) {
+      html += `<div class="script-err"><i class="bi bi-x-circle"></i> ${App.escapeHtml(res.error)}</div>`;
+    }
+    if (res.tests && res.tests.length) {
+      const pass = res.tests.filter(t => t.ok).length;
+      const fail = res.tests.length - pass;
+      html += `<div class="script-summary">`;
+      html += `<span style="color:#22c55e;">✓ ${pass}</span>`;
+      if (fail) html += ` · <span style="color:#dc3545;">✗ ${fail}</span>`;
+      html += ` · ${res.elapsed} ms</div>`;
+      html += "<ul class=\"script-tests\">" + res.tests.map(t =>
+        `<li class="${t.ok ? "ok" : "fail"}">
+          <i class="bi bi-${t.ok ? "check-lg" : "x-lg"}"></i>
+          ${App.escapeHtml(t.name)}
+          ${t.error ? '<span class="script-err-msg">' + App.escapeHtml(t.error) + '</span>' : ""}
+        </li>`).join("") + "</ul>";
+    } else if (res.ok) {
+      html += `<div class="script-ok">${App.t("scriptOkNoTests")} (${res.elapsed} ms)</div>`;
+    }
+    box.innerHTML = html;
+  }
+
+  /** Бейдж у названия вкладки Tests: ✓ 3 / 5 */
+  function _testsBadge(tab) {
+    if (!tab.lastTests || !tab.lastTests.tests || !tab.lastTests.tests.length) return "";
+    const t = tab.lastTests.tests;
+    const pass = t.filter(x => x.ok).length;
+    const fail = t.length - pass;
+    if (fail === 0) return ` <span class="sub-badge sub-ok">${pass}</span>`;
+    return ` <span class="sub-badge sub-fail">${pass}/${t.length}</span>`;
+  }
 
   /**
    * Предпросмотр подстановки динамических переменных под телом запроса.
