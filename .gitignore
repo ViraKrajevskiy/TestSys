@@ -1,7 +1,35 @@
+# ===== Виртуальное окружение и IDE =====
 .venv
 .idea
-theme.json
+.vscode
 .include
 .Lib
 .Scripts
 .pyvenv.cfg
+
+# ===== Артефакты сборки PyInstaller =====
+# В git не хранятся — тяжело и не нужно. Готовый exe идёт в GitHub Releases.
+build/
+dist/
+dist.zip
+*.pyc
+__pycache__/
+*.spec.bak
+
+# ===== Пользовательские данные (создаются приложением) =====
+# У каждого пользователя свои — в git им делать нечего.
+settings.json
+theme.json
+collections.json
+shared_collections.json
+metrics.json
+testsys.log
+testsys.log.*
+testsys_stdout.log
+testsys.db
+backup/
+
+# ===== Прочее =====
+.DS_Store
+Thumbs.db
+*.tmp

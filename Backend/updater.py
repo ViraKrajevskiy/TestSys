@@ -68,6 +68,8 @@ def fetch_releases(repo, asset_name="TestSys.exe", include_prerelease=False, lim
     if not repo or "/" not in repo:
         return {"ok": False, "error": "Не задан репозиторий в формате владелец/имя"}
 
+    # API GitHub, а не URL для клонирования. Репозиторий подставляется
+    # из аргумента — сам он берётся из version.py, править здесь не надо.
     url = f"https://api.github.com/repos/{repo}/releases"
     headers = {"Accept": "application/vnd.github+json"}
     if token:
