@@ -795,6 +795,111 @@ class Api:
         except Exception:
             return 0
 
+    # ========== ОБНОВЛЕНИЯ ==========
+    def get_app_version(self):
+        """Текущая версия и режим запуска."""
+        try:
+            import version as v
+            return {
+                "version": v.__version__,
+                "repo": v.GITHUB_REPO,
+                "asset": v.ASSET_NAME,
+                "frozen": IS_FROZEN,   # в dev-режиме обновление недоступно
+            }
+        except Exception as e:
+            return {"version": "0.0.0", "repo": "", "asset": "", "frozen": IS_FROZEN, "error": str(e)}
+
+    def check_updates(self, repo="", include_prerelease=False, token=""):
+        """Список релизов с GitHub + признак наличия обновления."""
+        import updater
+        try:
+            import version as v
+            cur = v.__version__
+            repo = repo or v.GITHUB_REPO
+            asset = v.ASSET_NAME
+        except Exception:
+            cur, asset = "0.0.0", "TestSys.exe"
+
+        res = updater.fetch_releases(repo, asset, include_prerelease, token=token)
+        if not res.get("ok"):
+            logger.warning(f"Проверка обновлений: {res.get('error')}")
+            return res
+
+        releases = res["releases"]
+        newest = releases[0] if releases else None
+        has_update = bool(newest and updater.is_newer(newest["version"], cur))
+
+        if has_update:
+            logger.info(f"Доступна версия {newest['version']} (текущая {cur})")
+
+        return {
+            "ok": True,
+            "current": cur,
+            "has_update": has_update,
+            "latest": newest,
+            "releases": releases,
+        }
+
+    def download_update(self, url, size=0, sha_url=""):
+        import updater
+        logger.info(f"Скачивание обновления: {url}")
+        return updater.download_release(url, size, sha_url)
+
+    def download_progress(self):
+        import updater
+        return updater.download_state()
+
+    def install_update(self, path=""):
+        """Поставить скачанную версию и перезапуститься."""
+        import updater
+        try:
+            import version as v
+            cur = v.__version__
+        except Exception:
+            cur = "0.0.0"
+
+        target = path or updater.download_state().get("path", "")
+        res = updater.install(target, cur)
+        if res.get("ok"):
+            logger.info("Установка обновления — приложение закрывается")
+            # Даём интерфейсу дорисовать сообщение и выходим
+            threading.Timer(1.2, self._quit_all).start()
+        return res
+
+    def list_backups(self):
+        import updater
+        return {"ok": True, "backups": updater.list_backups()}
+
+    def rollback_version(self, backup_path):
+        """Откатиться на сохранённую локально версию."""
+        import updater
+        try:
+            import version as v
+            cur = v.__version__
+        except Exception:
+            cur = "0.0.0"
+
+        res = updater.rollback(backup_path, cur)
+        if res.get("ok"):
+            logger.info(f"Откат на {backup_path}")
+            threading.Timer(1.2, self._quit_all).start()
+        return res
+
+    def cleanup_backups(self, keep=3):
+        import updater
+        return updater.cleanup_backups(keep)
+
+    def _quit_all(self):
+        """Закрыть все окна — установщик ждёт выхода процесса."""
+        try:
+            for w in list(webview.windows):
+                try:
+                    w.destroy()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     # ========== SWAGGER / OPENAPI ==========
     def fetch_swagger(self, url):
         """

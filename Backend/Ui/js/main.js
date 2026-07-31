@@ -44,6 +44,7 @@ App.init = function () {
   App.initMetrics();
   App.initDynamicVarsUI();
   App.initSwaggerUI();
+  App.initUpdater();
   App.initSyncUI();
   App.initSettingsModal();
   App.initThemeSettings();

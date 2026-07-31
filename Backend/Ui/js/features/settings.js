@@ -8,6 +8,10 @@ window.App = window.App || {};
     // Язык интерфейса
     language: "ru",
 
+    // Обновления
+    autoCheckUpdates: true,
+    skippedVersion: "",
+
     // Подключение
     apiBaseUrl: "http://127.0.0.1:8000",
 
@@ -166,6 +170,27 @@ window.App = window.App || {};
                   <option value="ru">Русский</option>
                   <option value="en">English</option>
                 </select>
+              </div>
+            </div>
+
+            <hr style="border-color:var(--border-color);">
+
+            <!-- UPDATES -->
+            <div class="mb-4">
+              <h6 style="color:var(--accent);font-size:13px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;">
+                <i class="bi bi-arrow-up-circle me-1"></i> <span data-i18n="updates">Обновления</span>
+              </h6>
+              <div class="d-flex gap-2 align-items-center">
+                <button type="button" class="btn btn-sm btn-outline-secondary flex-grow-1" id="check-updates-btn" style="font-size:12px;">
+                  <i class="bi bi-arrow-clockwise me-1"></i><span data-i18n="checkUpdates">Проверить обновления</span>
+                  <span id="settings-version" style="color:var(--text-dim);margin-left:6px;"></span>
+                </button>
+              </div>
+              <div class="form-check form-switch mt-2">
+                <input class="form-check-input" type="checkbox" id="set-auto-updates">
+                <label class="form-check-label" for="set-auto-updates" style="font-size:12px;" data-i18n="autoCheckUpdates">
+                  Проверять при запуске
+                </label>
               </div>
             </div>
 
@@ -330,6 +355,7 @@ window.App = window.App || {};
         hint.textContent = n > 0 ? `(${n})` : "";
       }
       _refreshLogSize();
+      _showVersion();
       modal.show();
     });
 
@@ -366,6 +392,16 @@ window.App = window.App || {};
     });
   };
 
+  /** Версия приложения рядом с кнопкой проверки обновлений */
+  async function _showVersion() {
+    const el = document.getElementById("settings-version");
+    if (!el || !window.pywebview?.api?.get_app_version) return;
+    try {
+      const v = await window.pywebview.api.get_app_version();
+      el.textContent = "v" + (v.version || "?");
+    } catch (_) {}
+  }
+
   /** Показать размер файла лога под кнопками */
   async function _refreshLogSize() {
     const el = document.getElementById("settings-log-size");
@@ -387,6 +423,7 @@ window.App = window.App || {};
   // ============================================================
   function fillForm(s) {
     document.getElementById("set-language").value          = s.language || "ru";
+    document.getElementById("set-auto-updates").checked    = s.autoCheckUpdates !== false;
     document.getElementById("set-api-url").value          = s.apiBaseUrl;
     document.getElementById("set-logging-enabled").checked = s.loggingEnabled;
     document.getElementById("set-log-level").value         = s.logLevel;
@@ -406,6 +443,7 @@ window.App = window.App || {};
 
   function readForm() {
     _settings.language             = document.getElementById("set-language").value;
+    _settings.autoCheckUpdates     = document.getElementById("set-auto-updates").checked;
     _settings.apiBaseUrl           = document.getElementById("set-api-url").value.trim() || DEFAULTS.apiBaseUrl;
     _settings.loggingEnabled       = document.getElementById("set-logging-enabled").checked;
     _settings.logLevel             = document.getElementById("set-log-level").value;
