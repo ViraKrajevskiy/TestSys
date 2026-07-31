@@ -22,6 +22,7 @@ import sys
 import tempfile
 import threading
 import time
+import zipfile
 from datetime import datetime
 
 import requests
@@ -92,36 +93,50 @@ def fetch_releases(repo, asset_name="TestSys.exe", include_prerelease=False, lim
             if item.get("prerelease") and not include_prerelease:
                 continue
 
-            # Ищем нужный файл среди вложений релиза
+            # Ищем нужный файл среди вложений релиза.
+            # Порядок поиска:
+            #   1. точное совпадение с ASSET_NAME (например TestSys.exe)
+            #   2. любой .exe рядом с релизом
+            #   3. .zip / .7z архив — распакуем и найдём exe внутри
             asset = None
-            for a in item.get("assets", []):
-                if a.get("name", "").lower() == asset_name.lower():
+            names = [(a.get("name", "").lower(), a) for a in item.get("assets", [])]
+
+            for n, a in names:
+                if n == asset_name.lower():
                     asset = a
                     break
-            # Если точного совпадения нет — берём первый .exe
             if not asset:
-                for a in item.get("assets", []):
-                    if a.get("name", "").lower().endswith(".exe"):
+                for n, a in names:
+                    if n.endswith(".exe"):
                         asset = a
                         break
             if not asset:
-                continue
+                for n, a in names:
+                    if n.endswith((".zip", ".7z")):
+                        asset = a
+                        break
+            # Если ничего подходящего нет — релиз всё равно показываем,
+            # но без возможности установить (только кнопка «Открыть в GitHub»).
 
             # Необязательный файл с контрольной суммой
             sha = ""
-            for a in item.get("assets", []):
-                if a.get("name", "").lower() in (asset["name"].lower() + ".sha256", "sha256.txt", "checksums.txt"):
-                    sha = a.get("browser_download_url", "")
-                    break
+            if asset:
+                for a in item.get("assets", []):
+                    if a.get("name", "").lower() in (asset["name"].lower() + ".sha256", "sha256.txt", "checksums.txt"):
+                        sha = a.get("browser_download_url", "")
+                        break
 
             releases.append({
                 "version": (item.get("tag_name") or "").lstrip("vV"),
                 "name": item.get("name") or item.get("tag_name") or "",
                 "notes": item.get("body") or "",
                 "published": (item.get("published_at") or "")[:10],
-                "url": asset.get("browser_download_url", ""),
-                "size": asset.get("size", 0),
-                "asset": asset.get("name", ""),
+                "url": asset.get("browser_download_url", "") if asset else "",
+                "size": asset.get("size", 0) if asset else 0,
+                "asset": asset.get("name", "") if asset else "",
+                "html_url": item.get("html_url", ""),          # ссылка на релиз в браузере
+                "has_asset": bool(asset),                      # есть ли что скачивать
+                "assets_count": len(item.get("assets", [])),   # чтобы понять, приложил ли автор что-то вообще
                 "prerelease": bool(item.get("prerelease")),
                 "sha_url": sha,
             })
@@ -159,11 +174,80 @@ def download_release(url, expected_size=0, sha_url=""):
     return {"ok": True, "started": True}
 
 
+def _extract_exe_from_zip(zip_path, dest_dir):
+    """
+    Распаковать zip и найти внутри exe.
+
+    Возвращаем путь к найденному exe. Логика поиска:
+      1. Точное совпадение с ASSET_NAME (TestSys.exe) — приоритетное.
+      2. Любой .exe, но НЕ явно служебный (unins*.exe от Inno Setup и т.п.).
+      3. Если .exe несколько — берём самый большой (обычно это приложение,
+         а не мелкий лаунчер).
+
+    Zip-архивы GitHub Releases часто содержат вложенную папку — идём рекурсивно
+    и plain-имя файла сравниваем в нижнем регистре.
+    """
+    try:
+        from version import ASSET_NAME
+    except Exception:
+        ASSET_NAME = "TestSys.exe"
+
+    extract_dir = os.path.join(dest_dir, "unpacked")
+    # Чистим прошлую распаковку, если была: старые файлы могли остаться
+    # после неудачной попытки обновления
+    if os.path.isdir(extract_dir):
+        shutil.rmtree(extract_dir, ignore_errors=True)
+    os.makedirs(extract_dir, exist_ok=True)
+
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        # Простенькая защита от Zip Slip: пропускаем пути с ..
+        for member in zf.namelist():
+            if ".." in member.replace("\\", "/").split("/"):
+                raise ValueError(f"Небезопасный путь в архиве: {member}")
+        zf.extractall(extract_dir)
+
+    # Собираем все exe с их размерами
+    exes = []
+    target_name = ASSET_NAME.lower()
+    for root, _dirs, files in os.walk(extract_dir):
+        for f in files:
+            if not f.lower().endswith(".exe"):
+                continue
+            full = os.path.join(root, f)
+            size = os.path.getsize(full)
+            exes.append((f.lower(), full, size))
+
+    if not exes:
+        return None
+
+    # 1. Точное совпадение
+    for name, path, _size in exes:
+        if name == target_name:
+            return path
+
+    # 2. Отфильтровываем служебные (uninstaller и т.п.)
+    def is_service(name):
+        n = name.lower()
+        return n.startswith("unins") or n in {"vc_redist.exe", "vcredist_x64.exe", "vcredist_x86.exe"}
+
+    real = [(n, p, s) for n, p, s in exes if not is_service(n)]
+    if not real:
+        real = exes
+
+    # 3. Самый большой файл
+    real.sort(key=lambda x: x[2], reverse=True)
+    return real[0][1]
+
+
 def _download_worker(url, sha_url):
     try:
         tmp_dir = os.path.join(tempfile.gettempdir(), "testsys_update")
         os.makedirs(tmp_dir, exist_ok=True)
-        target = os.path.join(tmp_dir, "TestSys_new.exe")
+
+        # Определяем расширение по URL, чтобы после скачивания понять,
+        # нужно ли распаковывать (zip) или это готовый exe
+        is_archive = url.lower().split("?")[0].endswith((".zip", ".7z"))
+        target = os.path.join(tmp_dir, "download" + (".zip" if is_archive else ".exe"))
 
         with requests.get(url, stream=True, timeout=60) as r:
             r.raise_for_status()
@@ -195,6 +279,18 @@ def _download_worker(url, sha_url):
         if os.path.getsize(target) < 1024:
             _download_state["error"] = "Скачанный файл слишком мал"
             return
+
+        # Если пришёл архив — распаковываем и находим exe внутри
+        if is_archive:
+            try:
+                exe_path = _extract_exe_from_zip(target, tmp_dir)
+                if not exe_path:
+                    _download_state["error"] = "В архиве не найден .exe файл"
+                    return
+                target = exe_path
+            except Exception as e:
+                _download_state["error"] = f"Не удалось распаковать архив: {e}"
+                return
 
         _download_state["path"] = target
 

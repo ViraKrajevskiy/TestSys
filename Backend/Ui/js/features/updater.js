@@ -142,7 +142,16 @@ window.App = window.App || {};
     document.getElementById("upd-current").textContent = _info.version || "—";
     document.getElementById("upd-repo").textContent = _info.repo || "—";
 
-    // В dev-режиме обновление невозможно — честно говорим
+    // Явно показываем, откуда версия: из собранного exe или из исходников.
+    // Это ключевое: если пользователь бежит из source, обновление не пройдёт
+    // и версия в файле version.py — единственный источник правды.
+    const src = document.getElementById("upd-src-mode");
+    if (src) {
+      src.innerHTML = _info.frozen
+        ? `<span style="color:#22c55e;">📦 ${App.t("updSrcExe") || "собранный exe — auto-update работает"}</span>`
+        : `<span style="color:#ffc107;">🛠 ${App.t("updSrcDev") || "запуск из исходников (python main.py). Auto-update отключён. Версия читается из Backend/version.py — правьте её перед сборкой (build.bat 1.0.5)."}</span>`;
+    }
+
     const devWarn = document.getElementById("upd-dev-warn");
     devWarn.style.display = _info.frozen ? "none" : "";
 
@@ -181,11 +190,28 @@ window.App = window.App || {};
           ? `<span class="upd-badge upd-cur">${App.t("installed")}</span>`
           : `<span class="upd-badge upd-old">${App.t("older")}</span>`;
 
-      const action = rel === 0
-        ? ""
-        : `<button class="upd-action" data-ver="${App.escapeAttr(r.version)}">
-             ${rel > 0 ? App.t("updateTo") : App.t("rollbackTo")}
-           </button>`;
+      // Три случая с кнопкой:
+      //   1) это текущая версия — кнопки нет
+      //   2) есть установочный файл (exe/zip) — «Обновить»/«Откатить»
+      //   3) файла нет — «Открыть в GitHub» (ссылка на релиз)
+      let action = "";
+      if (rel !== 0) {
+        if (r.has_asset === false) {
+          action = `<a class="upd-action upd-link" href="${App.escapeAttr(r.html_url || "")}"
+                       target="_blank" rel="noopener"
+                       title="${App.escapeAttr(App.t("noInstaller"))}">
+                      <i class="bi bi-box-arrow-up-right me-1"></i>${App.t("openOnGitHub")}
+                    </a>`;
+        } else {
+          action = `<button class="upd-action" data-ver="${App.escapeAttr(r.version)}">
+                     ${rel > 0 ? App.t("updateTo") : App.t("rollbackTo")}
+                    </button>`;
+        }
+      }
+
+      // Тег для zip-архивов — чтобы было видно, что качается не exe напрямую
+      const isZip = (r.asset || "").toLowerCase().endsWith(".zip");
+      const zipTag = isZip ? '<span class="upd-badge upd-pre">zip</span>' : "";
 
       return `
         <div class="upd-release">
@@ -193,8 +219,9 @@ window.App = window.App || {};
             <strong>${App.escapeHtml(r.version)}</strong>
             ${badge}
             ${r.prerelease ? '<span class="upd-badge upd-pre">pre</span>' : ""}
+            ${zipTag}
             <span class="upd-rel-date">${App.escapeHtml(r.published)}</span>
-            <span class="upd-rel-size">${_mb(r.size)}</span>
+            ${r.size ? `<span class="upd-rel-size">${_mb(r.size)}</span>` : ""}
             ${action}
           </div>
           ${r.notes ? `<div class="upd-notes">${App.escapeHtml(_trim(r.notes, 400))}</div>` : ""}
@@ -202,6 +229,8 @@ window.App = window.App || {};
     }).join("");
 
     box.querySelectorAll(".upd-action").forEach((b) => {
+      // ссылки-«открыть на GitHub» не перехватываем — пусть открываются как есть
+      if (b.tagName === "A") return;
       b.addEventListener("click", () => {
         const rel = _releases.find((x) => x.version === b.dataset.ver);
         if (rel) _confirmInstall(rel);
@@ -411,9 +440,18 @@ window.App = window.App || {};
               <strong id="upd-current">—</strong>
               <span class="upd-repo" id="upd-repo"></span>
             </div>
+            <div id="upd-src-mode" style="font-size:11px;margin-top:4px;"></div>
 
-            <div id="upd-dev-warn" class="upd-status upd-warn" style="display:none;" data-i18n="devModeNoUpdate">
-              Обновление доступно только в собранном приложении, не при запуске из исходников.
+            <div id="upd-dev-warn" class="upd-status upd-warn" style="display:none;">
+              <span data-i18n="devModeNoUpdate">Обновление доступно только в собранном приложении, не при запуске из исходников.</span>
+              <br><br>
+              <b>Как поднять версию:</b>
+              <ol style="margin:6px 0 0 20px;padding:0;font-size:11px;">
+                <li>Закройте приложение.</li>
+                <li>В корне проекта: <code>build.bat 1.0.5</code> (или <code>build.bat bump patch</code>).</li>
+                <li>Загрузите новый <code>dist\\TestSys.exe</code> (или <code>dist.zip</code>) в GitHub Release с тегом <code>v1.0.5</code>.</li>
+                <li>Запустите новый exe — он покажет актуальную версию и увидит релиз.</li>
+              </ol>
             </div>
 
             <div class="d-flex gap-2 align-items-center my-2">

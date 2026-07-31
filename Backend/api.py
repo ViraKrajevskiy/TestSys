@@ -9,6 +9,7 @@ import sys
 import threading
 import webview
 import logging
+from collections import deque
 from datetime import datetime
 import random
 import string
@@ -641,6 +642,94 @@ class Api:
         logger.info("Randomizer window opened")
         return True
 
+    # ========== CONSOLE WINDOW ==========
+    CONSOLE_WINDOW_TITLE = "TestSys — Console"
+
+    # Общий буфер записей консоли на всё приложение.
+    # Кладёт сюда главное окно (через publish_console_entry),
+    # читает окно-консоль (через read_console_entries). Ограничен, чтобы не
+    # разрастался в долгих сессиях — REPL-выхлоп для отладки, не архив.
+    _console_buffer = deque(maxlen=800)
+    _console_lock = threading.Lock()
+
+    def publish_console_entry(self, entry_json):
+        """Положить одну запись консоли в общий буфер (вызывает main-окно)."""
+        try:
+            entry = json.loads(entry_json) if isinstance(entry_json, str) else entry_json
+        except Exception:
+            return False
+        with Api._console_lock:
+            Api._console_buffer.append(entry)
+        return True
+
+    def read_console_entries(self, since_ts=0):
+        """Отдать записи новее since_ts (мс). Окно-консоль опрашивает раз в 400 мс."""
+        try:
+            ts = float(since_ts or 0)
+        except Exception:
+            ts = 0
+        with Api._console_lock:
+            return [e for e in Api._console_buffer if (e.get("ts") or 0) > ts]
+
+    def clear_console_entries(self):
+        """Полная очистка (кнопка «мусорка» и в main, и в окне-консоли)."""
+        with Api._console_lock:
+            Api._console_buffer.clear()
+        # Транслируем очистку во все окна, чтобы список исчез синхронно.
+        # Пометка ts=0 + kind=clear — сигнал слушателям.
+        for w in list(webview.windows):
+            try:
+                w.evaluate_js("window.App && App.scriptConsole && App.scriptConsole.clear && App.scriptConsole.clear(true)")
+            except Exception:
+                pass
+        return True
+
+    def open_console_window(self):
+        """Открыть консоль скриптов в отдельном окне ОС (аналог рандомайзера)."""
+        for w in webview.windows:
+            if w.title == self.CONSOLE_WINDOW_TITLE:
+                try:
+                    w.restore(); w.show()
+                except Exception:
+                    pass
+                return True
+
+        new_api = Api(window_kind="console")
+        win = webview.create_window(
+            title=self.CONSOLE_WINDOW_TITLE,
+            url=INDEX_HTML,
+            js_api=new_api,
+            width=900,
+            height=520,
+            min_size=(500, 260),
+        )
+
+        def on_loaded():
+            win.evaluate_js("window.loadConsoleWindow && window.loadConsoleWindow()")
+
+        def on_closing():
+            # ВАЖНО: evaluate_js из on_closing вызывать НЕЛЬЗЯ — pywebview
+            # держит event-loop главного окна, получается дедлок, и весь
+            # процесс аварийно завершается. Проверено на живом крашe.
+            # Просто убираем окно из списка; JS-флаг «окно открыто» больше
+            # не нужен — открытие идемпотентно через Python (см. проверку
+            # по заголовку в начале open_console_window).
+            try:
+                self.child_windows.remove(win)
+            except ValueError:
+                pass
+            return True
+
+        win.events.loaded += on_loaded
+        win.events.closing += on_closing
+        self.child_windows.append(win)
+        logger.info("Console window opened")
+        return True
+
+    def is_console_window_open(self):
+        """Есть ли сейчас открытое окно консоли — для JS-логики pop-out."""
+        return any(w.title == self.CONSOLE_WINDOW_TITLE for w in webview.windows)
+
     def insert_into_main_body(self, text):
         """Вставить текст в Body активной вкладки главного окна (из окна рандомайзера)."""
         main_window = self._find_main_window()
@@ -679,11 +768,26 @@ class Api:
             return None
 
     # ========== SYNC: HOST MODE (этот комп = сервер) ==========
-    def sync_host_start(self, port=8777, token="", host_name=""):
-        """Стать хостом: поднять LAN-сервер синхронизации."""
+    def sync_host_start(self, port=8777, token="", host_name="", host_client_id="",
+                        require_login=False, admin_name="", admin_password=""):
+        """Стать хостом: поднять LAN-сервер синхронизации.
+
+        Если require_login=True — включён режим per-user авторизации. При
+        первом запуске (пустой users.json) создаём владельца с указанными
+        admin_name / admin_password — иначе никто не сможет войти.
+        """
         import sync_server
-        data_file = os.path.join(USER_DATA_DIR, "shared_collections.json")
-        res = sync_server.start(port=port, data_file=data_file, token=token, host_name=host_name)
+        data_file  = os.path.join(USER_DATA_DIR, "shared_collections.json")
+        users_file = os.path.join(USER_DATA_DIR, "shared_users.json")
+        acl_file   = os.path.join(USER_DATA_DIR, "shared_acl.json")
+        res = sync_server.start(
+            port=port, data_file=data_file, token=token,
+            host_name=host_name, host_client_id=host_client_id,
+            users_file=users_file, acl_file=acl_file,
+            require_login=bool(require_login),
+            bootstrap_admin_name=admin_name,
+            bootstrap_admin_password=admin_password,
+        )
         logger.info(f"Sync host start: {res}")
         return res
 
@@ -702,47 +806,195 @@ class Api:
         return sync_server.get_local_ips()
 
     # ========== SYNC: CLIENT MODE (подключение к хосту) ==========
-    def sync_client_ping(self, base_url, token=""):
-        """Проверить доступность хоста."""
+    def _sync_headers(self, token="", client_id="", client_name="", session_token=""):
+        """Общий набор заголовков для клиентских запросов к хосту.
+
+        В обычном режиме — shared X-Sync-Token. В режиме require_login на
+        хосте — X-Session-Token из /api/auth/login. Клиент передаёт то,
+        что у него есть; сервер сам выберет нужное.
+        """
+        h = {}
+        if session_token: h["X-Session-Token"] = session_token
+        if token:         h["X-Sync-Token"]   = token
+        if client_id:     h["X-Client-Id"]    = client_id
+        if client_name:   h["X-Client-Name"]  = client_name
+        return h
+
+    def sync_client_ping(self, base_url, token="", client_id="", client_name="", session_token=""):
+        """Проверить доступность хоста + сообщить кто мы."""
         try:
-            headers = {"X-Sync-Token": token} if token else {}
-            r = requests.get(f"{base_url.rstrip('/')}/api/ping", headers=headers, timeout=5)
+            h = self._sync_headers(token, client_id, client_name, session_token)
+            r = requests.get(f"{base_url.rstrip('/')}/api/ping", headers=h, timeout=5)
+            if r.status_code == 403:
+                return {"ok": False, "error": "kicked", "kicked": True}
             return {"ok": r.ok, "status": r.status_code, "data": r.json() if r.ok else None}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def sync_client_pull(self, base_url, token=""):
+    def sync_client_pull(self, base_url, token="", client_id="", client_name="", session_token=""):
         """Забрать коллекции с хоста."""
         try:
-            headers = {"X-Sync-Token": token} if token else {}
-            r = requests.get(f"{base_url.rstrip('/')}/api/collections", headers=headers, timeout=10)
+            h = self._sync_headers(token, client_id, client_name, session_token)
+            r = requests.get(f"{base_url.rstrip('/')}/api/collections", headers=h, timeout=10)
             if r.status_code == 401:
-                return {"ok": False, "error": "Неверный токен доступа"}
+                return {"ok": False, "error": "Требуется вход", "need_login": True}
+            if r.status_code == 403:
+                return {"ok": False, "error": "kicked", "kicked": True}
             if not r.ok:
                 return {"ok": False, "error": f"HTTP {r.status_code}"}
             return {"ok": True, "doc": r.json()}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def sync_client_push(self, base_url, token, payload_json):
+    def sync_client_push(self, base_url, token, payload_json, client_id="", client_name="", session_token=""):
         """Отправить коллекции на хост."""
         try:
-            headers = {"Content-Type": "application/json"}
-            if token:
-                headers["X-Sync-Token"] = token
+            h = self._sync_headers(token, client_id, client_name, session_token)
+            h["Content-Type"] = "application/json"
             r = requests.put(
                 f"{base_url.rstrip('/')}/api/collections",
-                headers=headers,
+                headers=h,
                 data=payload_json.encode("utf-8"),
                 timeout=10,
             )
             if r.status_code == 401:
-                return {"ok": False, "error": "Неверный токен доступа"}
+                return {"ok": False, "error": "Требуется вход", "need_login": True}
+            if r.status_code == 403:
+                return {"ok": False, "error": "kicked", "kicked": True}
             if r.status_code == 409:
                 return {"ok": False, "conflict": True, "data": r.json()}
             if not r.ok:
                 return {"ok": False, "error": f"HTTP {r.status_code}"}
             return {"ok": True, "data": r.json()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def sync_session_list(self, base_url, token="", client_id="", client_name=""):
+        """Получить список подключённых участников."""
+        try:
+            h = self._sync_headers(token, client_id, client_name)
+            r = requests.get(f"{base_url.rstrip('/')}/api/session/list", headers=h, timeout=5)
+            if r.status_code == 401:
+                return {"ok": False, "error": "Неверный токен доступа"}
+            return {"ok": r.ok, "data": r.json() if r.ok else None}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def sync_session_leave(self, base_url, token="", client_id=""):
+        """Явно выйти из сессии."""
+        try:
+            h = self._sync_headers(token, client_id)
+            r = requests.post(f"{base_url.rstrip('/')}/api/session/leave", headers=h, timeout=5)
+            return {"ok": r.ok}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def sync_session_set_role(self, base_url, token, client_id, target_id, role):
+        """Admin: сменить роль другому клиенту."""
+        try:
+            h = self._sync_headers(token, client_id)
+            h["Content-Type"] = "application/json"
+            body = json.dumps({"client_id": target_id, "role": role}).encode("utf-8")
+            r = requests.post(f"{base_url.rstrip('/')}/api/session/role", headers=h, data=body, timeout=5)
+            if r.status_code == 403:
+                return {"ok": False, "error": "Только admin может менять роли"}
+            if not r.ok:
+                return {"ok": False, "error": f"HTTP {r.status_code}"}
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    # ========== AUTH (per-user login) ==========
+    def sync_auth_login(self, base_url, name, password, client_id=""):
+        """Логин пользователя. Возвращает session_token при успехе."""
+        try:
+            h = self._sync_headers("", client_id, name)
+            h["Content-Type"] = "application/json"
+            body = json.dumps({"name": name, "password": password}).encode("utf-8")
+            r = requests.post(f"{base_url.rstrip('/')}/api/auth/login", headers=h, data=body, timeout=10)
+            if r.status_code == 401:
+                return {"ok": False, "error": "Неверное имя или пароль"}
+            if not r.ok:
+                return {"ok": False, "error": f"HTTP {r.status_code}"}
+            return {"ok": True, "data": r.json()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def sync_auth_logout(self, base_url, session_token, client_id=""):
+        try:
+            h = {"X-Session-Token": session_token, "X-Client-Id": client_id}
+            r = requests.post(f"{base_url.rstrip('/')}/api/auth/logout", headers=h, timeout=5)
+            return {"ok": r.ok}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def sync_auth_users_list(self, base_url, session_token, client_id=""):
+        """Список пользователей (admin видит всех, member — только себя)."""
+        try:
+            h = {"X-Session-Token": session_token, "X-Client-Id": client_id}
+            r = requests.get(f"{base_url.rstrip('/')}/api/auth/users", headers=h, timeout=5)
+            if r.status_code == 403:
+                return {"ok": False, "error": "Только admin"}
+            if not r.ok:
+                return {"ok": False, "error": f"HTTP {r.status_code}"}
+            return {"ok": True, "users": r.json().get("users", [])}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def sync_auth_users_save(self, base_url, session_token, name, password, role, client_id=""):
+        """Создать/обновить пользователя (admin only). password="" — не менять."""
+        try:
+            h = {"X-Session-Token": session_token, "Content-Type": "application/json",
+                 "X-Client-Id": client_id}
+            body = json.dumps({"name": name, "password": password, "role": role}).encode("utf-8")
+            r = requests.post(f"{base_url.rstrip('/')}/api/auth/users", headers=h, data=body, timeout=10)
+            if r.status_code == 403:
+                return {"ok": False, "error": "Только admin"}
+            if not r.ok:
+                try:
+                    return {"ok": False, "error": r.json().get("error", f"HTTP {r.status_code}")}
+                except Exception:
+                    return {"ok": False, "error": f"HTTP {r.status_code}"}
+            return {"ok": True, "data": r.json()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def sync_acl_get(self, base_url, session_token, client_id=""):
+        try:
+            h = {"X-Session-Token": session_token, "X-Client-Id": client_id}
+            r = requests.get(f"{base_url.rstrip('/')}/api/acl", headers=h, timeout=5)
+            if not r.ok:
+                return {"ok": False, "error": f"HTTP {r.status_code}"}
+            return {"ok": True, "acl": r.json().get("acl", {})}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def sync_acl_save(self, base_url, session_token, acl, client_id=""):
+        try:
+            h = {"X-Session-Token": session_token, "Content-Type": "application/json",
+                 "X-Client-Id": client_id}
+            body = json.dumps({"acl": acl}).encode("utf-8")
+            r = requests.post(f"{base_url.rstrip('/')}/api/acl", headers=h, data=body, timeout=10)
+            if r.status_code == 403:
+                return {"ok": False, "error": "Только admin"}
+            if not r.ok:
+                return {"ok": False, "error": f"HTTP {r.status_code}"}
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def sync_session_kick(self, base_url, token, client_id, target_id, seconds=300):
+        """Admin: выкинуть клиента на N секунд."""
+        try:
+            h = self._sync_headers(token, client_id)
+            h["Content-Type"] = "application/json"
+            body = json.dumps({"client_id": target_id, "seconds": int(seconds)}).encode("utf-8")
+            r = requests.post(f"{base_url.rstrip('/')}/api/session/kick", headers=h, data=body, timeout=5)
+            if r.status_code == 403:
+                return {"ok": False, "error": "Только admin может кикать"}
+            if not r.ok:
+                return {"ok": False, "error": f"HTTP {r.status_code}"}
+            return {"ok": True}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 

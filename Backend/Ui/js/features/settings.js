@@ -326,6 +326,22 @@ window.App = window.App || {};
               </div>
             </div>
 
+            <hr style="border-color:var(--border-color);">
+
+            <!-- HOTKEYS -->
+            <div class="mb-3">
+              <h6 style="color:var(--accent);font-size:13px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
+                <span><i class="bi bi-keyboard me-1"></i> <span data-i18n="hotkeys">Горячие клавиши</span></span>
+                <button type="button" class="btn btn-sm btn-link p-0" id="hotkeys-reset-all" style="font-size:11px;">
+                  <span data-i18n="resetAll">Сбросить все</span>
+                </button>
+              </h6>
+              <div id="hotkeys-list"></div>
+              <div class="form-text" style="font-size:10px;margin-top:6px;" data-i18n="hotkeysHint">
+                Нажмите на клавишу справа от команды, чтобы задать своё сочетание. Escape отменяет ввод, Backspace — сбрасывает к умолчанию.
+              </div>
+            </div>
+
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-outline-secondary btn-sm" id="set-reset-btn">
@@ -356,7 +372,20 @@ window.App = window.App || {};
       }
       _refreshLogSize();
       _showVersion();
+      _renderHotkeys();
       modal.show();
+    });
+
+    // Сброс всех горячих клавиш
+    document.getElementById("hotkeys-reset-all")?.addEventListener("click", async () => {
+      const ok = await App.showConfirm({
+        title: App.t("resetAll") || "Сбросить все",
+        message: App.t("hotkeysResetConfirm") || "Все горячие клавиши вернутся к значениям по умолчанию. Продолжить?",
+        okText: App.t("reset") || "Сбросить", danger: true,
+      });
+      if (!ok) return;
+      App.resetAllHotkeys();
+      _renderHotkeys();
     });
 
     // Save
@@ -391,6 +420,107 @@ window.App = window.App || {};
       App.syncToast && App.syncToast(App.t("logsCleared"));
     });
   };
+
+  // ============================================================
+  // ГОРЯЧИЕ КЛАВИШИ
+  // ============================================================
+  const HK_GROUPS = ["tabs", "request", "console", "ui"];
+
+  function _renderHotkeys() {
+    const box = document.getElementById("hotkeys-list");
+    if (!box || !App.getHotkeys) return;
+
+    const items = App.getHotkeys();
+    const byGroup = {};
+    items.forEach(it => { (byGroup[it.group] = byGroup[it.group] || []).push(it); });
+
+    box.innerHTML = HK_GROUPS.filter(g => byGroup[g]).map(g => `
+      <div class="hk-group">
+        <div class="hk-group-title">${App.t("hkGroup_" + g) || g}</div>
+        ${byGroup[g].map(it => `
+          <div class="hk-row" data-key="${it.key}">
+            <div class="hk-label">${App.t(it.i18n) || it.key}</div>
+            <button type="button" class="hk-combo${it.isCustom ? " hk-custom" : ""}"
+                    data-action="capture" title="${App.t("hkChangeHint") || "Кликните и нажмите нужное сочетание"}">
+              ${it.combo ? App.hotkeyPretty(it.combo) : "—"}
+            </button>
+            <button type="button" class="hk-reset" data-action="reset" title="${App.t("resetToDefault") || "Сбросить"}"
+                    ${it.isCustom ? "" : "disabled"}>
+              <i class="bi bi-arrow-counterclockwise"></i>
+            </button>
+          </div>
+        `).join("")}
+      </div>`).join("");
+
+    // Клики по кнопкам
+    box.querySelectorAll("[data-action='reset']").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const row = btn.closest(".hk-row");
+        App.resetHotkey(row.dataset.key);
+        _renderHotkeys();
+      });
+    });
+    box.querySelectorAll("[data-action='capture']").forEach(btn => {
+      btn.addEventListener("click", () => _startCapture(btn));
+    });
+  }
+
+  /**
+   * Захват нажатия клавиши для кнопки-сочетания.
+   * ESC — отмена (оставляем как было).
+   * Backspace — сбросить к дефолту.
+   * Любое другое сочетание — применить.
+   */
+  function _startCapture(btn) {
+    const row = btn.closest(".hk-row");
+    const cmdKey = row.dataset.key;
+    const original = btn.textContent.trim();
+    btn.textContent = App.t("hkPressKeys") || "Нажмите клавиши…";
+    btn.classList.add("hk-capturing");
+    window._captureHotkeyForKey = cmdKey;   // hotkeys.js увидит и не сработает
+
+    const finish = (restore) => {
+      window._captureHotkeyForKey = null;
+      btn.classList.remove("hk-capturing");
+      document.removeEventListener("keydown", onKey, true);
+      if (restore) btn.textContent = original;
+    };
+
+    const onKey = (e) => {
+      // ESC — отмена без изменений
+      if (e.key === "Escape") {
+        e.preventDefault(); e.stopPropagation();
+        finish(true);
+        return;
+      }
+      // Backspace — вернуть к умолчанию
+      if (e.key === "Backspace") {
+        e.preventDefault(); e.stopPropagation();
+        App.resetHotkey(cmdKey);
+        finish(false);
+        _renderHotkeys();
+        return;
+      }
+      // Ждём именно сочетание — модификатор в одиночку не считаем
+      const combo = App.readHotkeyFromEvent(e);
+      if (!combo) return;
+      e.preventDefault(); e.stopPropagation();
+
+      const res = App.setHotkey(cmdKey, combo);
+      if (!res.ok) {
+        if (res.error === "clash") {
+          App.showAlert(App.t("hkClash") ? App.t("hkClash").replace("{key}", res.with) : `Уже занято: ${res.with}`);
+        } else {
+          App.showAlert(App.t("error") + ": " + (res.error || ""));
+        }
+        finish(true);
+        return;
+      }
+      finish(false);
+      _renderHotkeys();
+    };
+    document.addEventListener("keydown", onKey, true);
+  }
 
   /** Версия приложения рядом с кнопкой проверки обновлений */
   async function _showVersion() {

@@ -250,7 +250,41 @@ def _find_safe_port(start=17800, tries=200):
     return start
 
 
+# Список CLI-команд. Если первый аргумент один из них — запускаем консоль
+# без GUI. Так пользователь может звать exe из CI: TestSys.exe run col.json
+_CLI_COMMANDS = {"run", "import", "request", "-h", "--help"}
+
+
+def _maybe_run_cli():
+    """Проверить argv на CLI-команду и, если она есть, отработать и выйти."""
+    argv = sys.argv[1:]
+    if not argv or argv[0] not in _CLI_COMMANDS:
+        return None
+
+    # В onefile-режиме stdout/stderr перенаправлены в файл, чтобы print
+    # не падал. Для CLI это плохо — пользователь хочет видеть вывод.
+    # Возвращаем на консоль, если она есть.
+    try:
+        if sys.stdout is None or not hasattr(sys.stdout, "isatty"):
+            sys.stdout = open("CON:" if os.name == "nt" else "/dev/tty", "w")
+            sys.stderr = sys.stdout
+    except Exception:
+        pass
+
+    try:
+        from cli import main as cli_main
+        return cli_main(argv)
+    except Exception as e:
+        print(f"CLI failed: {e}", file=sys.stderr)
+        return 1
+
+
 def main():
+    # CLI-режим — не поднимаем GUI, отработали и вышли с exit code для CI
+    exit_code = _maybe_run_cli()
+    if exit_code is not None:
+        sys.exit(exit_code)
+
     print("=" * 50)
     print("  TestSys запускается")
     print(f"  frozen={IS_FROZEN}")

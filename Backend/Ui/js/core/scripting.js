@@ -28,10 +28,30 @@ window.App = window.App || {};
       text: args.map(_fmt).join(" "),
       raw: args,
     };
+    _pushEntry(entry, /*publish*/ true);
+    return entry;
+  }
+
+  function _pushEntry(entry, publish) {
     _console.push(entry);
     if (_console.length > CONSOLE_MAX) _console.shift();
     _consoleListeners.forEach(fn => { try { fn(entry); } catch (_) {} });
-    return entry;
+
+    // Транслируем в общий буфер Python — так запись увидит и отдельное
+    // окно-консоль (оно опрашивает буфер каждые ~400 мс).
+    // publish=false — запись пришла к нам через pull, обратно не отправляем
+    // (иначе эхо-цикл между окнами).
+    if (!publish) return;
+    try {
+      const api = window.pywebview && window.pywebview.api;
+      if (api && api.publish_console_entry) {
+        const forWire = {
+          ts: entry.ts, kind: entry.kind,
+          source: entry.source, text: entry.text,
+        };
+        api.publish_console_entry(JSON.stringify(forWire));
+      }
+    } catch (_) { /* нет API — ок */ }
   }
 
   function _fmt(v) {
@@ -46,9 +66,32 @@ window.App = window.App || {};
 
   App.scriptConsole = {
     get: () => _console.slice(),
-    clear: () => { _console.length = 0; _consoleListeners.forEach(fn => fn(null)); },
+    /**
+     * @param remote true — очистка пришла из общего буфера, не транслируем
+     *               обратно в Python (иначе окна перекидываются очисткой
+     *               без конца).
+     */
+    clear: (remote) => {
+      _console.length = 0;
+      _consoleListeners.forEach(fn => fn(null));
+      if (!remote) {
+        try {
+          const api = window.pywebview && window.pywebview.api;
+          if (api && api.clear_console_entries) api.clear_console_entries();
+        } catch (_) {}
+      }
+    },
     onLog: (fn) => { _consoleListeners.push(fn); },
     write: _log,
+    /** Внутренний ввод из общего буфера — используется окном-консолью. */
+    _ingest: (entry) => {
+      // Оригинальный ts сохраняем — иначе порядок записей в разных окнах
+      // разойдётся, а окно опрашивает буфер именно по ts.
+      _pushEntry({
+        ts: entry.ts, kind: entry.kind, source: entry.source,
+        text: entry.text, raw: [entry.text],
+      }, /*publish*/ false);
+    },
   };
 
   // ============================================================

@@ -26,7 +26,12 @@ window.App = window.App || {};
 
     document.addEventListener("mousemove", (e) => {
       if (!isResizing) return;
-      const dx = e.clientX - startX;
+      // При положении «справа» ресайз-хендл находится у левой границы
+      // сайдбара — тянуть влево должно расширять его, а не сужать.
+      // Плавающий сайдбар тоже правильнее ресайзить «по направлению к центру».
+      const root = document.getElementById("app-root");
+      const isRight = root && root.classList.contains("sidebar-right");
+      const dx = isRight ? (startX - e.clientX) : (e.clientX - startX);
       const newWidth = Math.max(120, Math.min(500, startWidth + dx));
       sidebar.style.width = newWidth + "px";
     });
@@ -37,8 +42,12 @@ window.App = window.App || {};
       handle.classList.remove("active");
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
-      // Save sidebar width
-      _saveSidebarWidth(sidebar.offsetWidth);
+      // Плавающий сайдбар — отдельная жизнь: не хотим, чтобы его временный
+      // размер затирал «нормальную» ширину для режима слева/справа.
+      const root = document.getElementById("app-root");
+      if (!root || !root.classList.contains("sidebar-floating")) {
+        _saveSidebarWidth(sidebar.offsetWidth);
+      }
     });
 
     // Load saved width

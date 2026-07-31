@@ -6,6 +6,8 @@ App.state = {
   nextId: 1,
   isDetachedWindow: false,
   expandedFolders: { "JSONPlaceholder::Users": true },
+  // Коллекции по умолчанию развёрнуты. Свёрнутые кладём сюда как true.
+  collapsedCollections: {},
 };
 
 // ============================================================

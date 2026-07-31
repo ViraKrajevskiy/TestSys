@@ -11,11 +11,47 @@ window.App = window.App || {};
 
 (function () {
   const POLL_MS = 8000;
+  const CID_KEY = "sync.clientId";
+  const TOKEN_KEY = "sync.sessionToken";       // храним в localStorage — переживает перезапуск
 
   let _pollTimer = null;
   let _lastKnownVersion = 0;   // версия документа, от которой мы правим (host/client)
   let _lastKnownMtime = 0;     // время файла (folder)
   let _busy = false;
+  let _clients = [];           // последний известный список участников
+  let _myRole = "member";
+  let _myUserId = "";
+  let _autoApply = false;      // авто-применять новые версии без диалога (настройка)
+  let _promptOpen = false;     // диалог «загрузить новые изменения?» уже открыт
+  let _loginPromptOpen = false;// «требуется вход» модалка уже открыта
+
+  /** Стабильный client_id этого приложения — переживает перезапуск. */
+  function clientId() {
+    let id = "";
+    try { id = localStorage.getItem(CID_KEY) || ""; } catch (_) {}
+    if (id) return id;
+    // Простой UUIDv4 без зависимостей
+    id = "c-" + Math.random().toString(36).slice(2, 10) + "-" + Date.now().toString(36);
+    try { localStorage.setItem(CID_KEY, id); } catch (_) {}
+    return id;
+  }
+  App.getSyncClientId = clientId;
+
+  App.getSyncClients = () => _clients.slice();
+  App.getSyncMyRole  = () => _myRole;
+  App.getSyncUserId  = () => _myUserId;
+
+  /** Сессионный токен — выдаёт хост при login, живёт 8 часов. */
+  function sessionToken() {
+    try { return localStorage.getItem(TOKEN_KEY) || ""; } catch { return ""; }
+  }
+  function setSessionToken(t) {
+    try {
+      if (t) localStorage.setItem(TOKEN_KEY, t);
+      else   localStorage.removeItem(TOKEN_KEY);
+    } catch {}
+  }
+  App.getSyncSessionToken = sessionToken;
 
   // ============================================================
   // ХЕЛПЕРЫ
@@ -62,7 +98,10 @@ window.App = window.App || {};
   App.syncPull = async function (silent) {
     const m = mode();
     if (m === "local" || !api()) return { ok: false, error: "Синхронизация выключена" };
-    if (_busy) return { ok: false, error: "Занято" };
+    if (_busy) {
+      if (!silent) _toast("Уже идёт синхронизация, подождите…", false);
+      return { ok: false, error: "busy", silent: true };
+    }
     _busy = true;
 
     try {
@@ -83,8 +122,10 @@ window.App = window.App || {};
       const token = m === "host" ? hostToken() : remoteToken();
       if (!url) return { ok: false, error: "Не задан адрес хоста" };
 
-      const res = await api().sync_client_pull(url, token);
-      if (!res.ok) return { ok: false, error: res.error };
+      const res = await api().sync_client_pull(url, token, clientId(), clientName(), sessionToken());
+      if (res.kicked) return { ok: false, error: "Вас исключил admin", kicked: true };
+      if (res.need_login) { _requireLogin(url); return { ok: false, error: "need_login", silent: true }; }
+      if (!res.ok) return { ok: false, error: _humanNetErr(res.error, url) };
       _applyDoc(res.doc, true);
       if (!silent) _toast(`Загружено (версия ${res.doc.version}, ${res.doc.updated_by || "—"})`);
       return { ok: true, version: res.doc.version };
@@ -92,6 +133,46 @@ window.App = window.App || {};
       _busy = false;
     }
   };
+
+  /**
+   * Превращаем сетевую портянку в человеческое объяснение.
+   * ConnectTimeoutError → «хост не отвечает», «Max retries» → «недоступен» и т.д.
+   * Плюс подсказки по типовым причинам.
+   */
+  App.humanizeSyncError = function (err, url) { return _humanNetErr(err, url); };
+
+  function _humanNetErr(err, url) {
+    const raw = String(err || "").toLowerCase();
+    const host = (() => { try { return new URL(url).hostname; } catch { return url; } })();
+
+    // Признаки: TCP-таймаут при попытке подключиться
+    if (raw.includes("connecttimeout") || raw.includes("timed out")) {
+      const hints = [];
+      // 172.20.10.x — iPhone Personal Hotspot: клиенты изолированы друг от друга
+      if (/^172\.20\.10\./.test(host)) {
+        hints.push("iPhone/мобильный хот-спот: клиенты не видят друг друга (client isolation). Нужен обычный Wi-Fi или проводная сеть.");
+      } else {
+        hints.push("Проверьте на хосте: приложение запущено и «● Хост запущен»?");
+        hints.push("Проверьте брандмауэр Windows на хосте: TestSys должен быть разрешён в частной сети.");
+        hints.push("Проверьте, что оба ПК в одной сети (Wi-Fi без «изоляции клиентов», не VPN).");
+      }
+      return `${host} не отвечает — соединение отвалилось по таймауту.\n\n• ${hints.join("\n• ")}`;
+    }
+    if (raw.includes("refused") || raw.includes("10061")) {
+      return `${host} отклонил соединение — порт открыт, но никто на нём не слушает.\n\n• Хост не запущен, или порт другой.\n• На хосте у TestSys нажат «Стоп»?`;
+    }
+    if (raw.includes("unreachable") || raw.includes("no route")) {
+      return `Нет маршрута до ${host} — вы в разных сетях.\n\n• Проверьте, что обе машины в одной локалке.\n• VPN у кого-то из вас может ломать маршруты.`;
+    }
+    if (raw.includes("name or service not known") || raw.includes("getaddrinfo") || raw.includes("nodename")) {
+      return `Не удалось разрешить имя ${host}. Используйте IP-адрес вместо hostname, или проверьте DNS.`;
+    }
+    if (raw.includes("401") || raw.includes("токен") || raw.includes("token")) {
+      return `Неверный пароль (токен). Уточните у хоста, какой пароль стоит в его настройках синхронизации.`;
+    }
+    // Что-то экзотическое — отдаём как есть, но короче
+    return String(err).split("\n")[0].slice(0, 250);
+  }
 
   // ============================================================
   // PUSH — отправить свои изменения
@@ -125,12 +206,14 @@ window.App = window.App || {};
       if (!url) return { ok: false, error: "Не задан адрес хоста" };
 
       const doc = _buildDoc(force ? undefined : _lastKnownVersion);
-      const res = await api().sync_client_push(url, token, JSON.stringify(doc));
+      const res = await api().sync_client_push(url, token, JSON.stringify(doc), clientId(), clientName(), sessionToken());
+      if (res.kicked) return { ok: false, error: "Вас исключил admin", kicked: true };
+      if (res.need_login) { _requireLogin(url); return { ok: false, error: "need_login", silent: true }; }
 
       if (res.conflict) {
         return { ok: false, conflict: true, reason: "version", data: res.data };
       }
-      if (!res.ok) return { ok: false, error: res.error };
+      if (!res.ok) return { ok: false, error: _humanNetErr(res.error, url) };
 
       _lastKnownVersion = res.data.version;
       _toast(`Отправлено (версия ${res.data.version})`);
@@ -152,14 +235,20 @@ window.App = window.App || {};
 
     const who = res.data ? (res.data.updated_by || "кто-то") : "кто-то";
     const when = res.data ? (res.data.updated_at || "") : "";
-    const msg =
-      `Конфликт: ${who} уже изменил коллекции${when ? " (" + when + ")" : ""}.\n\n` +
-      `OK — забрать чужую версию (свои правки потеряются)\n` +
-      `Отмена — перезаписать своей версией (чужие правки потеряются)`;
 
-    if (confirm(msg)) {
-      return await App.syncPull();
-    }
+    // Раньше был нативный confirm() — он рушится в pywebview и не темизирован.
+    // Пользуемся своим модальным диалогом; кнопки красноречивые, чтобы никто
+    // не потерял чужие правки из-за формулировки «OK / Отмена».
+    const choice = await (App.showConfirm ? App.showConfirm({
+      title: App.t("syncConflictTitle") || "Конфликт версий",
+      message: (App.t("syncConflictMsg") || "{who} уже изменил коллекции{when}.\n\nЗабрать чужую версию — ваши правки потеряются.\nПерезаписать своей — чужие правки потеряются.")
+        .replace("{who}", who).replace("{when}", when ? ` (${when})` : ""),
+      okText:     App.t("syncTakeTheirs") || "Забрать чужую",
+      cancelText: App.t("syncKeepMine")   || "Перезаписать своей",
+      danger: true,
+    }) : Promise.resolve(true));
+
+    if (choice) return await App.syncPull();
     return await App.syncPush({ force: true });
   };
 
@@ -195,36 +284,120 @@ window.App = window.App || {};
       const token = m === "host" ? hostToken() : remoteToken();
       if (!url) return;
 
-      const res = await api().sync_client_ping(url, token);
-      if (res.ok && res.data && res.data.version > _lastKnownVersion) {
-        _notifyRemoteChange(res.data.version);
+      // Ping заодно тащит список участников для UI и нашу текущую роль
+      const [ping, session] = await Promise.all([
+        api().sync_client_ping(url, token, clientId(), clientName(), sessionToken()),
+        api().sync_session_list(url, token, clientId(), clientName()).catch(() => ({ ok: false })),
+      ]);
+      if (session && session.ok && session.data) {
+        _clients = session.data.clients || [];
+        _publish("clients");
+      }
+      if (ping.kicked) {
+        _publish("kicked");
+        App.syncStopPolling();
+        _toast("Вас исключил admin. Синхронизация остановлена.", true);
+        return;
+      }
+      if (ping.ok && ping.data) {
+        if (ping.data.your_role && ping.data.your_role !== _myRole) {
+          _myRole = ping.data.your_role;
+          _publish("role");
+        }
+        if (ping.data.version > _lastKnownVersion) {
+          if (_autoApply) {
+            const pr = await App.syncPull(true);
+            if (pr.ok) _toast(`Автозагрузка: версия ${pr.version}`);
+          } else {
+            _openChangesDialog(ping.data.version);
+          }
+        }
       }
     } catch (_) { /* тихо */ }
   }
 
+  /** Диалог «применить новые изменения?» — заменяет старую тонкую полоску */
+  async function _openChangesDialog(version) {
+    if (_promptOpen) return;
+    _promptOpen = true;
+    try {
+      const who = _clients.length ? (
+        // Ищем того, кто последний менял — приблизительно, по updated_by документа
+        // (не хранится в ping, но покажем «есть кто-то онлайн»)
+        ""
+      ) : "";
+      const ok = await App.showConfirm({
+        title: "Новые изменения в коллекциях",
+        message: `На хосте появилась версия ${version}${who ? " от " + who : ""}. Загрузить сейчас?\n\nВаши локальные правки, не отправленные на хост, могут быть перезаписаны.`,
+        okText: "Загрузить", cancelText: "Позже",
+      });
+      if (ok) {
+        const res = await App.syncPull();
+        if (!res.ok && res.error && !res.silent) App.showAlert(res.error);
+      }
+    } finally { _promptOpen = false; }
+  }
+
+  // Простенькая подписка для UI — не хочется тащить event bus ради одного модуля
+  const _subs = [];
+  App.onSyncEvent = (fn) => { _subs.push(fn); };
+  function _publish(kind) { _subs.forEach(fn => { try { fn(kind); } catch (_) {} }); }
+
   function _notifyRemoteChange(version) {
-    const bar = document.getElementById("sync-status-bar");
-    if (!bar) return;
-    bar.style.display = "flex";
-    bar.querySelector("#sync-change-text").textContent =
-      version ? `Есть новая версия коллекций (${version})` : "Коллекции изменены другим участником";
+    // Оставлено для обратной совместимости — теперь используется _openChangesDialog
+    _openChangesDialog(version);
   }
 
   // ============================================================
   // HOST CONTROL
   // ============================================================
-  App.syncHostStart = async function () {
+  App.syncHostStart = async function (opts) {
     if (!api()) return { ok: false, error: "API недоступен" };
-    const res = await api().sync_host_start(hostPort(), hostToken(), clientName());
+    opts = opts || {};
+    // client_id владельца — тот же, что и локальный, чтоб он числился как admin.
+    // require_login/admin_name/admin_password — только если хост включает
+    // per-user auth. При включении первый раз создаём владельца.
+    const res = await api().sync_host_start(
+      hostPort(), hostToken(), clientName(), clientId(),
+      !!opts.requireLogin,
+      opts.adminName || clientName(),
+      opts.adminPassword || "",
+    );
     if (res.ok) {
-      // Первичная загрузка своих коллекций на сервер, если он пуст
-      const pull = await App.syncPull(true);
-      if (pull.ok && App.USER_COLLECTIONS.length === 0) {
-        // сервер пуст и локально пусто — ничего не делаем
+      _myRole = "admin";
+      // Владельцу дальше ходить не по shared-token, а по session-token.
+      // Логинимся сразу после старта, если включён режим логина.
+      if (opts.requireLogin && opts.adminPassword) {
+        const login = await App.syncLogin(opts.adminName || clientName(), opts.adminPassword);
+        if (!login.ok) { /* показывать не будем — статус хоста и так виден */ }
       }
+      const pull = await App.syncPull(true);
+      if (pull.ok && App.USER_COLLECTIONS.length === 0) { /* ничего */ }
       App.syncStartPolling();
     }
     return res;
+  };
+
+  /**
+   * Явный logout — сообщаем хосту, что уходим (освободит место в списке),
+   * затем переводим в local и останавливаем опрос.
+   */
+  App.syncLogout = async function () {
+    if (!api()) return { ok: false };
+    App.syncStopPolling();
+    const m = mode();
+    if (m === "client" && remoteUrl()) {
+      try { await api().sync_session_leave(remoteUrl(), remoteToken(), clientId()); } catch (_) {}
+    } else if (m === "host") {
+      await App.syncHostStop(true);   // остановит и почистит список
+    }
+    if (App.saveSettingsObject) {
+      await App.saveSettingsObject({ syncMode: "local" });
+    }
+    _clients = [];
+    _publish("clients");
+    App.updateSyncBadge && App.updateSyncBadge();
+    return { ok: true };
   };
 
   /**
@@ -248,6 +421,101 @@ window.App = window.App || {};
     if (!api()) return { running: false };
     return await api().sync_host_status();
   };
+
+  // ============================================================
+  // ADMIN-ДЕЙСТВИЯ (kick / роли) — доступны только admin-у
+  // ============================================================
+  App.syncSetRole = async function (targetId, role) {
+    if (!api()) return { ok: false };
+    const m = mode();
+    const url = m === "host" ? `http://127.0.0.1:${hostPort()}` : remoteUrl();
+    const token = m === "host" ? hostToken() : remoteToken();
+    return await api().sync_session_set_role(url, token, clientId(), targetId, role);
+  };
+
+  App.syncKick = async function (targetId, seconds) {
+    if (!api()) return { ok: false };
+    const m = mode();
+    const url = m === "host" ? `http://127.0.0.1:${hostPort()}` : remoteUrl();
+    const token = m === "host" ? hostToken() : remoteToken();
+    return await api().sync_session_kick(url, token, clientId(), targetId, seconds || 300);
+  };
+
+  App.syncSetAutoApply = (on) => { _autoApply = !!on; };
+  App.syncGetAutoApply = () => _autoApply;
+
+  // ============================================================
+  // ЛОГИН / ЛОГАУТ (per-user auth)
+  // ============================================================
+  App.syncLogin = async function (username, password) {
+    if (!api()) return { ok: false, error: "API недоступен" };
+    const m = mode();
+    const url = m === "host" ? `http://127.0.0.1:${hostPort()}` : remoteUrl();
+    if (!url) return { ok: false, error: "Не задан адрес хоста" };
+    const res = await api().sync_auth_login(url, username, password, clientId());
+    if (res.ok && res.data && res.data.token) {
+      setSessionToken(res.data.token);
+      _myRole   = res.data.role || "member";
+      _myUserId = res.data.user_id || "";
+      _publish("role");
+      _publish("login");
+    }
+    return res;
+  };
+
+  App.syncAuthLogout = async function () {
+    if (!api()) return { ok: false };
+    const m = mode();
+    const url = m === "host" ? `http://127.0.0.1:${hostPort()}` : remoteUrl();
+    const tok = sessionToken();
+    if (url && tok) {
+      try { await api().sync_auth_logout(url, tok, clientId()); } catch (_) {}
+    }
+    setSessionToken("");
+    _myUserId = ""; _myRole = "member";
+    _publish("login");
+    return { ok: true };
+  };
+
+  App.syncListUsers = async function () {
+    const m = mode();
+    const url = m === "host" ? `http://127.0.0.1:${hostPort()}` : remoteUrl();
+    return await api().sync_auth_users_list(url, sessionToken(), clientId());
+  };
+  App.syncSaveUser = async function (name, password, role) {
+    const m = mode();
+    const url = m === "host" ? `http://127.0.0.1:${hostPort()}` : remoteUrl();
+    return await api().sync_auth_users_save(url, sessionToken(), name, password, role, clientId());
+  };
+  App.syncGetAcl = async function () {
+    const m = mode();
+    const url = m === "host" ? `http://127.0.0.1:${hostPort()}` : remoteUrl();
+    return await api().sync_acl_get(url, sessionToken(), clientId());
+  };
+  App.syncSaveAcl = async function (acl) {
+    const m = mode();
+    const url = m === "host" ? `http://127.0.0.1:${hostPort()}` : remoteUrl();
+    return await api().sync_acl_save(url, sessionToken(), acl, clientId());
+  };
+
+  /** Показать модалку логина, когда сервер вернул 401 need_login. */
+  async function _requireLogin(url) {
+    if (_loginPromptOpen) return;
+    _loginPromptOpen = true;
+    try {
+      if (App.showSyncLoginDialog) {
+        await App.showSyncLoginDialog(url);
+      } else {
+        // Fallback без UI-модалки
+        const name = await App.showPrompt({ title: "Требуется вход", label: "Имя пользователя", value: clientName() });
+        if (!name) return;
+        const pw = await App.showPrompt({ title: "Требуется вход", label: "Пароль", value: "" });
+        if (!pw) return;
+        const r = await App.syncLogin(name, pw);
+        if (!r.ok) App.showAlert("Ошибка входа: " + (r.error || ""));
+      }
+    } finally { _loginPromptOpen = false; }
+  }
 
   // ============================================================
   // ПРОВЕРКА ПОДКЛЮЧЕНИЯ (для клиента)

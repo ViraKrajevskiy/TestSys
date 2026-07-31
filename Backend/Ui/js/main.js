@@ -31,6 +31,8 @@ App.detectWindowKind = async function () {
 
   if (App.WINDOW_KIND === "randomizer" && window.loadRandomizerWindow) {
     window.loadRandomizerWindow();
+  } else if (App.WINDOW_KIND === "console" && window.loadConsoleWindow) {
+    window.loadConsoleWindow();
   }
   return App.WINDOW_KIND;
 };
@@ -45,6 +47,7 @@ App.init = function () {
   App.initDynamicVarsUI();
   App.initSwaggerUI();
   App.initScriptConsole();
+  App.initLoadTest();
   App.initUpdater();
   App.initSyncUI();
   App.initSettingsModal();
@@ -60,6 +63,7 @@ App.init = function () {
   App.loadCollections().then(() => App.renderCollections()); // загрузить коллекции
   App.loadMetrics();            // история метрик переживает перезапуск
   App.loadAndApplySavedTheme(); // загрузить тему
+  App.loadSidebarPosition && App.loadSidebarPosition(); // left / right / floating
 
   document.getElementById("add-tab-btn").addEventListener("click", () => App.addTab());
   document.getElementById("close-all-btn").addEventListener("click", () => App.closeAllTabs());
@@ -76,28 +80,9 @@ App.init = function () {
     });
   }
 
-  document.addEventListener("keydown", (e) => {
-    if (e.ctrlKey && e.key.toLowerCase() === "t") {
-      e.preventDefault();
-      App.addTab();
-      return;
-    }
-    if (e.ctrlKey && e.key.toLowerCase() === "w" && App.state.activeTabId !== null) {
-      e.preventDefault();
-      App.closeTab(App.state.activeTabId);
-      return;
-    }
-    if (e.ctrlKey && e.key === "Tab") {
-      const tabs = App.state.tabs;
-      if (tabs.length < 2) return;
-      e.preventDefault();
-      const idx = tabs.findIndex((t) => t.id === App.state.activeTabId);
-      const next = e.shiftKey
-        ? (idx - 1 + tabs.length) % tabs.length
-        : (idx + 1) % tabs.length;
-      App.selectTab(tabs[next].id);
-    }
-  });
+  // Все горячие клавиши теперь в едином реестре — см. core/hotkeys.js.
+  // Он же обрабатывает Ctrl+T / Ctrl+W / Ctrl+Tab / Ctrl+` и всё остальное.
+  App.initHotkeys && App.initHotkeys();
 
   if (App.state.tabs.length === 0) {
     App.addTab();
