@@ -251,13 +251,13 @@ window.App = window.App || {};
   function _html() {
     return `
     <div id="script-console" class="script-console">
-      <div id="console-resize" class="console-resize" title="${App.t("resize") || "Ресайз"}"></div>
+      <div id="console-resize" class="console-resize" data-i18n-title="resize" title="${App.t("resize") || "Ресайз"}"></div>
       <div class="console-head">
         <div class="console-title">
-          <i class="bi bi-terminal me-2"></i>${App.t("console")}
+          <i class="bi bi-terminal me-2"></i><span data-i18n="console">${App.t("console")}</span>
         </div>
         <div class="console-actions">
-          <button id="console-popout" title="${App.t("popOut") || "В отдельное окно"}">
+          <button id="console-popout" data-i18n-title="popOut" title="${App.t("popOut") || "В отдельное окно"}">
             <i class="bi bi-box-arrow-up-right"></i>
           </button>
           <button id="console-clear" title="Ctrl+L"><i class="bi bi-trash3"></i></button>
@@ -268,6 +268,7 @@ window.App = window.App || {};
       <div class="repl-line">
         <span class="repl-prompt">›</span>
         <input type="text" id="repl-input" class="repl-input" spellcheck="false"
+               data-i18n-ph="replPlaceholder"
                placeholder="${App.t("replPlaceholder")}">
       </div>
     </div>`;

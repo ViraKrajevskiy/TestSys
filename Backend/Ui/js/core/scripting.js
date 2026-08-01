@@ -7,7 +7,7 @@
  *   - repl:        интерактивные команды в консоли
  *
  * Sandbox без изоляции процесса — скрипты пишет сам пользователь для
- * своих запросов, как в Postman. Но окружение чистое: ни window, ни
+ * своих запросов. Окружение чистое: ни window, ни
  * document, ни pywebview. Только pm-объект и стандартные функции JS.
  *
  * Всё синхронное — Function() без async, чтобы результат был предсказуем
@@ -270,7 +270,7 @@ window.App = window.App || {};
       request: requestApi,
       response: responseApi,
       variables: varsApi,
-      environment: varsApi,   // алиас для совместимости с Postman-стилем
+      environment: varsApi,   // алиас для совместимости с другими API-тулами
       globals: varsApi,       // тоже алиас
       test: testFn,
       expect: _expect,

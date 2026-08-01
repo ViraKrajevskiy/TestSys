@@ -38,11 +38,11 @@ window.App = window.App || {};
 
     let body = "";
     if (s.loading) {
-      body = '<div class="text-secondary p-3"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка...</div>';
+      body = '<div class="text-secondary p-3"><span class="spinner-border spinner-border-sm me-2"></span>' + (App.t("loading") || "Загрузка...") + '</div>';
     } else if (s.error) {
       body = '<div class="alert alert-danger m-2">' + App.escapeHtml(s.error) + "</div>";
     } else if (!rows.length) {
-      body = '<div class="text-secondary p-3">Нет пользователей. Нажмите "Загрузить" или "Создать".</div>';
+      body = '<div class="text-secondary p-3">' + (App.t("noUsersHint") || 'Нет пользователей. Нажмите "Загрузить" или "Создать".') + '</div>';
     } else {
       const cols = ["id", "name", "email", "phone", "company", "website"];
       let table = '<div class="table-responsive"><table class="table table-sm crud-table"><thead><tr>';
@@ -65,9 +65,9 @@ window.App = window.App || {};
     return (
       '<div class="users-panel p-2">' +
         '<div class="crud-table-toolbar d-flex align-items-center gap-2 mb-2">' +
-          '<h5 class="mb-0 me-auto"><i class="bi bi-people me-2"></i>Пользователи</h5>' +
-          '<button class="btn btn-sm btn-outline-secondary" id="users-reload-btn"><i class="bi bi-arrow-clockwise"></i> Загрузить</button>' +
-          '<button class="btn btn-sm send-btn" id="users-create-btn"><i class="bi bi-plus-lg"></i> Создать</button>' +
+          '<h5 class="mb-0 me-auto"><i class="bi bi-people me-2"></i>' + (App.t("users") || "Пользователи") + '</h5>' +
+          '<button class="btn btn-sm btn-outline-secondary" id="users-reload-btn"><i class="bi bi-arrow-clockwise"></i> ' + (App.t("load") || "Загрузить") + '</button>' +
+          '<button class="btn btn-sm send-btn" id="users-create-btn"><i class="bi bi-plus-lg"></i> ' + (App.t("create") || "Создать") + '</button>' +
         "</div>" +
         '<div id="users-panel-body">' + body + "</div>" +
       "</div>"
@@ -138,7 +138,7 @@ window.App = window.App || {};
       }
       tab.usersState.loaded = true;
     } catch (e) {
-      tab.usersState.error = "Не удалось загрузить пользователей: " + (e && e.message ? e.message : e);
+      tab.usersState.error = (App.t("usersLoadFail") || "Не удалось загрузить пользователей") + ": " + (e && e.message ? e.message : e);
       tab.usersState.rows = [];
     } finally {
       tab.usersState.loading = false;

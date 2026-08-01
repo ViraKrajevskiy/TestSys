@@ -337,12 +337,27 @@ def install(new_exe_path, current_version="0.0.0"):
         backup = os.path.join(_backup_dir(), f"TestSys-{current_version}.exe")
 
         bat = _write_install_script(exe, new_exe_path, backup, os.getpid())
-        # Скрипт стартует отдельно и переживает выход приложения
+
+        # Прячем консоль установщика полностью. Раньше было DETACHED_PROCESS +
+        # CREATE_NO_WINDOW — на Windows этих флагов недостаточно, если внутри
+        # bat есть пайп: каждая сторона пайпа получает свой console handle,
+        # и cmd проявляется чёрным окном с заголовком "find ..." (то, что
+        # сейчас в пайпе). Правильный путь — STARTUPINFO с SW_HIDE:
+        # Windows создаёт консоль, но не показывает её, независимо от пайпов.
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        si.wShowWindow = 0                             # SW_HIDE
+
         subprocess.Popen(
             ["cmd", "/c", bat],
             cwd=app_dir,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0),
+            startupinfo=si,
+            creationflags=(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                           | getattr(subprocess, "DETACHED_PROCESS", 0)),
             close_fds=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
         return {"ok": True, "restarting": True}
     except Exception as e:
@@ -354,49 +369,61 @@ def _write_install_script(exe_path, new_path, backup_path, pid):
     .bat ждёт выхода процесса, меняет файлы и запускает приложение.
     Ожидание по PID надёжнее паузы: не угадываем, сколько закрывается окно.
     """
+    # ВСЁ ЧЕРЕЗ ФАЙЛЫ, БЕЗ ПАЙПОВ. Пайп в bat заставляет Windows создать
+    # отдельную консоль для правой стороны пайпа — тогда пользователь
+    # видит чёрное окно «find ...» (это и был тот баг).
+    # Лог пишем в testsys_update\install.log — если что-то пошло не так,
+    # его можно открыть и разобраться, без модальных pause на десктопе.
+    log = os.path.join(tempfile.gettempdir(), "testsys_update", "install.log")
+    check_out = os.path.join(tempfile.gettempdir(), "testsys_update", "check.txt")
+
     script = f"""@echo off
-chcp 65001 >nul
+chcp 65001 >nul 2>&1
 setlocal
+
+set "LOG={log}"
+set "CHECKFILE={check_out}"
+echo === Install started %DATE% %TIME% ===>>"%LOG%" 2>nul
 
 rem --- ждём, пока приложение закроется (до 60 секунд) ---
 set /a tries=0
 :wait
-tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul
+tasklist /FI "PID eq {pid}" /NH /FO CSV >"%CHECKFILE%" 2>nul
+findstr /C:"{pid}" "%CHECKFILE%" >nul 2>&1
 if errorlevel 1 goto ready
 set /a tries+=1
 if %tries% gtr 60 goto timeout
-timeout /t 1 /nobreak >nul
+timeout /t 1 /nobreak >nul 2>&1
 goto wait
 
 :timeout
-echo Приложение не закрылось за 60 секунд. Обновление отменено.
-pause
+echo Timed out waiting for PID {pid} to exit>>"%LOG%" 2>nul
 exit /b 1
 
 :ready
+del /q "%CHECKFILE%" 2>nul
 rem небольшая пауза — Windows освобождает файл не мгновенно
-timeout /t 1 /nobreak >nul
+timeout /t 1 /nobreak >nul 2>&1
 
 rem --- сохраняем текущую версию ---
-if exist "{backup_path}" del /q "{backup_path}"
-move /y "{exe_path}" "{backup_path}" >nul
+if exist "{backup_path}" del /q "{backup_path}" 2>nul
+move /y "{exe_path}" "{backup_path}" >nul 2>&1
 if errorlevel 1 (
-    echo Не удалось сохранить старую версию.
-    pause
+    echo Failed to backup old exe>>"%LOG%" 2>nul
     exit /b 1
 )
 
 rem --- ставим новую ---
-move /y "{new_path}" "{exe_path}" >nul
+move /y "{new_path}" "{exe_path}" >nul 2>&1
 if errorlevel 1 (
-    echo Не удалось установить новую версию, возвращаем прежнюю.
-    move /y "{backup_path}" "{exe_path}" >nul
-    pause
+    echo Failed to install new exe, rolling back>>"%LOG%" 2>nul
+    move /y "{backup_path}" "{exe_path}" >nul 2>&1
     exit /b 1
 )
 
+echo Installed OK, launching new exe>>"%LOG%" 2>nul
 start "" "{exe_path}"
-del "%~f0"
+del "%~f0" 2>nul
 """
     path = os.path.join(tempfile.gettempdir(), "testsys_update", "install.bat")
     os.makedirs(os.path.dirname(path), exist_ok=True)

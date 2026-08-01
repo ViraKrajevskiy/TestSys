@@ -194,6 +194,7 @@ window.App = window.App || {};
           document.getElementById("import-swagger-btn-hidden")?.click();
           App.showSwaggerImport && App.showSwaggerImport();
         } },
+      { icon: "bi-terminal", label: App.t("importCurl") || "Импорт cURL", on: () => App.showCurlImport && App.showCurlImport() },
       { sep: true },
       { icon: "bi-arrows-expand",   label: App.t("expandAll")   || "Раскрыть всё", on: _expandAll },
       { icon: "bi-arrows-collapse", label: App.t("collapseAll") || "Свернуть всё", on: _collapseAll },

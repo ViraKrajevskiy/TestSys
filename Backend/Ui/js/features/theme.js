@@ -306,9 +306,24 @@ window.App = window.App || {};
     document.getElementById("theme-settings-btn")?.addEventListener("click", () => {
       App.openThemeModal();
     });
+
+    // При смене языка перерисовываем список пресетов и «мои темы» —
+    // их имена и описания генерятся в JS, data-i18n их не покроет.
+    App.onLangChange && App.onLangChange(() => {
+      const modal = document.getElementById("theme-modal-v2");
+      if (!modal || !modal.classList.contains("show")) return;
+      _renderPresets();
+      _renderMyThemes();
+    });
   };
 
   App.openThemeModal = async function () {
+    // Защита: если модалку кто-то удалил из DOM (например, i18n при смене
+    // языка), пересоздаём — иначе Bootstrap падает на getOrCreateInstance(null).
+    if (!document.getElementById("theme-modal-v2")) {
+      document.body.insertAdjacentHTML("beforeend", _modalHtml());
+      _wire();
+    }
     const modalEl = document.getElementById("theme-modal-v2");
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     // Подтянем текущую тему
@@ -541,6 +556,8 @@ window.App = window.App || {};
   // HTML модалки
   // ============================================================
   function _modalHtml() {
+    // Все статические подписи вынесены в data-i18n — applyTranslations()
+    // переключит их без пересборки. Полный список ключей — в i18n.js.
     return `
     <div class="modal fade" id="theme-modal-v2" tabindex="-1">
       <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -552,42 +569,42 @@ window.App = window.App || {};
           <div class="modal-body">
 
             <ul class="nav nav-tabs" role="tablist" style="border-color:var(--border-color);">
-              <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#theme-tab-presets"  type="button">${_t("presets", "Пресеты")}</button></li>
-              <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#theme-tab-quick"    type="button">${_t("quickGen","Быстрая генерация")}</button></li>
-              <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#theme-tab-custom"   type="button">${_t("custom", "Кастом")}</button></li>
-              <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#theme-tab-my"       type="button">${_t("myThemes","Мои темы")}</button></li>
+              <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#theme-tab-presets" type="button" data-i18n="presets">Пресеты</button></li>
+              <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#theme-tab-quick" type="button" data-i18n="quickGen">Быстрая генерация</button></li>
+              <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#theme-tab-custom" type="button" data-i18n="custom">Кастом</button></li>
+              <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#theme-tab-my" type="button" data-i18n="myThemes">Мои темы</button></li>
             </ul>
 
             <div class="tab-content pt-3">
 
               <!-- ПРЕСЕТЫ -->
               <div class="tab-pane fade show active" id="theme-tab-presets">
-                <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
-                  ${_t("clickToApply","Кликните — тема применится сразу. Отмена вернёт как было.")}
+                <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;" data-i18n="clickToApply">
+                  Кликните — тема применится сразу. Отмена вернёт как было.
                 </div>
                 <div id="theme-presets-grid" class="theme-grid"></div>
               </div>
 
               <!-- БЫСТРАЯ ГЕНЕРАЦИЯ -->
               <div class="tab-pane fade" id="theme-tab-quick">
-                <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">
-                  ${_t("pickColorAndMode","Выберите главный цвет и режим — сгенерируем всю палитру.")}
+                <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;" data-i18n="pickColorAndMode">
+                  Выберите главный цвет и режим — сгенерируем всю палитру.
                 </div>
                 <div class="d-flex gap-3 align-items-center flex-wrap">
                   <div>
-                    <label class="form-label" style="font-size:12px;">${_t("mainColor","Главный цвет")}</label>
+                    <label class="form-label" style="font-size:12px;" data-i18n="mainColor">Главный цвет</label>
                     <input type="color" id="theme-quickcolor" value="#6366f1" style="width:70px;height:38px;padding:2px;">
                   </div>
                   <div class="form-check form-check-inline align-self-end">
                     <input class="form-check-input" type="radio" name="theme-quickmode" value="dark" id="tqmd" checked>
-                    <label class="form-check-label" for="tqmd">${_t("dark","Тёмная")}</label>
+                    <label class="form-check-label" for="tqmd" data-i18n="dark">Тёмная</label>
                   </div>
                   <div class="form-check form-check-inline align-self-end">
                     <input class="form-check-input" type="radio" name="theme-quickmode" value="light" id="tqml">
-                    <label class="form-check-label" for="tqml">${_t("light","Светлая")}</label>
+                    <label class="form-check-label" for="tqml" data-i18n="light">Светлая</label>
                   </div>
                   <button class="btn send-btn btn-sm align-self-end" id="theme-auto-generate">
-                    <i class="bi bi-magic me-1"></i>${_t("generate","Сгенерировать")}
+                    <i class="bi bi-magic me-1"></i><span data-i18n="generate">Сгенерировать</span>
                   </button>
                 </div>
               </div>
@@ -607,22 +624,22 @@ window.App = window.App || {};
                   ${_colorField("theme-danger",   "danger",     "Ошибка")}
                 </div>
                 <div class="mt-3">
-                  <label class="form-label" style="font-size:12px;">${_t("borderRadius","Скругление")} (<span id="theme-radius-value">8</span>px)</label>
+                  <label class="form-label" style="font-size:12px;"><span data-i18n="borderRadius">Скругление</span> (<span id="theme-radius-value">8</span>px)</label>
                   <input type="range" class="form-range" id="theme-radius" min="0" max="20" step="1">
                 </div>
                 <div>
-                  <label class="form-label" style="font-size:12px;">${_t("fontSize","Размер шрифта")} (<span id="theme-fontsize-value">14</span>px)</label>
+                  <label class="form-label" style="font-size:12px;"><span data-i18n="fontSize">Размер шрифта</span> (<span id="theme-fontsize-value">14</span>px)</label>
                   <input type="range" class="form-range" id="theme-fontsize" min="11" max="20" step="1">
                 </div>
                 <div class="d-flex gap-2 flex-wrap mt-3">
                   <button class="btn btn-sm btn-outline-secondary" id="theme-save-as">
-                    <i class="bi bi-bookmark-plus me-1"></i>${_t("saveThemeAs","Сохранить как…")}
+                    <i class="bi bi-bookmark-plus me-1"></i><span data-i18n="saveThemeAs">Сохранить как…</span>
                   </button>
                   <button class="btn btn-sm btn-outline-secondary" id="theme-export">
-                    <i class="bi bi-clipboard me-1"></i>${_t("copyJson","Скопировать JSON")}
+                    <i class="bi bi-clipboard me-1"></i><span data-i18n="copyJson">Скопировать JSON</span>
                   </button>
                   <button class="btn btn-sm btn-outline-secondary" id="theme-import">
-                    <i class="bi bi-clipboard-check me-1"></i>${_t("importTheme","Импорт")}
+                    <i class="bi bi-clipboard-check me-1"></i><span data-i18n="importTheme">Импорт</span>
                   </button>
                 </div>
               </div>
@@ -636,11 +653,11 @@ window.App = window.App || {};
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-outline-secondary btn-sm" id="theme-reset-btn">
-              <i class="bi bi-arrow-counterclockwise me-1"></i>${_t("defaults","По умолчанию")}
+              <i class="bi bi-arrow-counterclockwise me-1"></i><span data-i18n="defaults">По умолчанию</span>
             </button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">${_t("cancel","Отмена")}</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal" data-i18n="cancel">Отмена</button>
             <button type="button" class="btn send-btn btn-sm" id="theme-save-btn">
-              <i class="bi bi-check-lg me-1"></i>${_t("save","Сохранить")}
+              <i class="bi bi-check-lg me-1"></i><span data-i18n="save">Сохранить</span>
             </button>
           </div>
         </div>
@@ -651,7 +668,7 @@ window.App = window.App || {};
   function _colorField(id, key, label) {
     return `
       <div class="col-6 col-md-4">
-        <label class="form-label" style="font-size:11px;">${_t(key, label)}</label>
+        <label class="form-label" style="font-size:11px;" data-i18n="${key}">${label}</label>
         <input type="color" class="form-control form-control-sm theme-color-input" id="${id}">
       </div>`;
   }

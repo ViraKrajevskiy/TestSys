@@ -250,12 +250,12 @@ window.App = window.App || {};
       return;
     }
 
-    // ---- Таблица key-value в стиле Postman ----
+    // ---- Таблица key-value ----
     const listKey = tab.activeSubTab;
     const rows = tab[listKey];
     const limit = listKey === "params" ? App.LIMITS.MAX_PARAMS : App.LIMITS.MAX_HEADERS;
 
-    // В конце всегда одна пустая строка — как в Postman: начал печатать,
+    // В конце всегда одна пустая строка: начал печатать,
     // снизу тут же появилась следующая. Кнопка "Add" больше не нужна.
     if (rows.length === 0 || _rowFilled(rows[rows.length - 1])) {
       if (rows.length < limit) rows.push({ key: "", value: "", enabled: true });
@@ -293,7 +293,7 @@ window.App = window.App || {};
       keyInput.placeholder = App.t("key");
       valInput.placeholder = App.t("value");
 
-      // Чекбокс включения строки (как в Postman)
+      // Чекбокс включения строки
       const check = document.createElement("input");
       check.type = "checkbox";
       check.className = "kv-enabled";

@@ -25,7 +25,7 @@ python create_db.py
 uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-**Терминал 2 — PyPostman приложение:**
+**Терминал 2 — TestSys приложение:**
 ```bash
 cd Backend
 pip install -r requirements.txt
@@ -34,7 +34,7 @@ python main.py
 
 **Проверка:**
 - Откройте `http://127.0.0.1:8000/docs` в браузере (Swagger UI)
-- Откройте PyPostman окно
+- Откройте TestSys окно
 - Кнопка 👥 → Users CRUD должна работать
 
 ---

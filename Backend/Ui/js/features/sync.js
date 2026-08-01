@@ -97,9 +97,9 @@ window.App = window.App || {};
   // ============================================================
   App.syncPull = async function (silent) {
     const m = mode();
-    if (m === "local" || !api()) return { ok: false, error: "Синхронизация выключена" };
+    if (m === "local" || !api()) return { ok: false, error: App.t("syncOff") || "Синхронизация выключена" };
     if (_busy) {
-      if (!silent) _toast("Уже идёт синхронизация, подождите…", false);
+      if (!silent) _toast(App.t("syncBusyWait") || "Уже идёт синхронизация, подождите…", false);
       return { ok: false, error: "busy", silent: true };
     }
     _busy = true;
@@ -113,17 +113,17 @@ window.App = window.App || {};
         if (!parsed.ok) return { ok: false, error: parsed.error };
         _applyDoc({ collections: parsed.collections, variables: parsed.variables }, true);
         _lastKnownMtime = res.mtime;
-        if (!silent) _toast("Загружено из общей папки");
+        if (!silent) _toast(App.t("syncPulledFolder") || "Загружено из общей папки");
         return { ok: true };
       }
 
       // host — читаем свой же файл через локальный сервер
       const url = m === "host" ? `http://127.0.0.1:${hostPort()}` : remoteUrl();
       const token = m === "host" ? hostToken() : remoteToken();
-      if (!url) return { ok: false, error: "Не задан адрес хоста" };
+      if (!url) return { ok: false, error: App.t("noHostUrl") || "Не задан адрес хоста" };
 
       const res = await api().sync_client_pull(url, token, clientId(), clientName(), sessionToken());
-      if (res.kicked) return { ok: false, error: "Вас исключил admin", kicked: true };
+      if (res.kicked) return { ok: false, error: App.t("kickedByAdmin") || "Вас исключил admin", kicked: true };
       if (res.need_login) { _requireLogin(url); return { ok: false, error: "need_login", silent: true }; }
       if (!res.ok) return { ok: false, error: _humanNetErr(res.error, url) };
       _applyDoc(res.doc, true);
@@ -180,8 +180,8 @@ window.App = window.App || {};
   App.syncPush = async function (opts) {
     const force = opts && opts.force;
     const m = mode();
-    if (m === "local" || !api()) return { ok: false, error: "Синхронизация выключена" };
-    if (_busy) return { ok: false, error: "Занято" };
+    if (m === "local" || !api()) return { ok: false, error: App.t("syncOff") || "Синхронизация выключена" };
+    if (_busy) return { ok: false, error: App.t("busy") || "Занято" };
     _busy = true;
 
     try {
@@ -197,17 +197,17 @@ window.App = window.App || {};
         const res = await api().shared_folder_write(folderPath(), payload);
         if (!res.ok) return { ok: false, error: res.error };
         _lastKnownMtime = res.mtime;
-        _toast("Сохранено в общую папку");
+        _toast(App.t("syncSavedFolder") || "Сохранено в общую папку");
         return { ok: true };
       }
 
       const url = m === "host" ? `http://127.0.0.1:${hostPort()}` : remoteUrl();
       const token = m === "host" ? hostToken() : remoteToken();
-      if (!url) return { ok: false, error: "Не задан адрес хоста" };
+      if (!url) return { ok: false, error: App.t("noHostUrl") || "Не задан адрес хоста" };
 
       const doc = _buildDoc(force ? undefined : _lastKnownVersion);
       const res = await api().sync_client_push(url, token, JSON.stringify(doc), clientId(), clientName(), sessionToken());
-      if (res.kicked) return { ok: false, error: "Вас исключил admin", kicked: true };
+      if (res.kicked) return { ok: false, error: App.t("kickedByAdmin") || "Вас исключил admin", kicked: true };
       if (res.need_login) { _requireLogin(url); return { ok: false, error: "need_login", silent: true }; }
 
       if (res.conflict) {
@@ -229,7 +229,7 @@ window.App = window.App || {};
   App.syncPushWithConflictUI = async function () {
     const res = await App.syncPush();
     if (res.ok || !res.conflict) {
-      if (!res.ok && res.error) _toast("Ошибка: " + res.error, true);
+      if (!res.ok && res.error) _toast(App.t("error") + ": " + res.error, true);
       return res;
     }
 
@@ -296,7 +296,7 @@ window.App = window.App || {};
       if (ping.kicked) {
         _publish("kicked");
         App.syncStopPolling();
-        _toast("Вас исключил admin. Синхронизация остановлена.", true);
+        _toast(App.t("syncKicked") || "Вас исключил admin. Синхронизация остановлена.", true);
         return;
       }
       if (ping.ok && ping.data) {
@@ -327,9 +327,11 @@ window.App = window.App || {};
         ""
       ) : "";
       const ok = await App.showConfirm({
-        title: "Новые изменения в коллекциях",
-        message: `На хосте появилась версия ${version}${who ? " от " + who : ""}. Загрузить сейчас?\n\nВаши локальные правки, не отправленные на хост, могут быть перезаписаны.`,
-        okText: "Загрузить", cancelText: "Позже",
+        title: App.t("newChangesTitle") || "Новые изменения в коллекциях",
+        message: (App.t("newChangesMsg") || "На хосте появилась версия {v}{by}. Загрузить сейчас?\n\nВаши локальные правки, не отправленные на хост, могут быть перезаписаны.")
+                    .replace("{v}", version).replace("{by}", who ? " " + (App.t("from") || "от") + " " + who : ""),
+        okText: App.t("load") || "Загрузить",
+        cancelText: App.t("later") || "Позже",
       });
       if (ok) {
         const res = await App.syncPull();
@@ -512,7 +514,7 @@ window.App = window.App || {};
         const pw = await App.showPrompt({ title: "Требуется вход", label: "Пароль", value: "" });
         if (!pw) return;
         const r = await App.syncLogin(name, pw);
-        if (!r.ok) App.showAlert("Ошибка входа: " + (r.error || ""));
+        if (!r.ok) App.showAlert((App.t("loginError") || "Ошибка входа") + ": " + (r.error || ""));
       }
     } finally { _loginPromptOpen = false; }
   }
@@ -576,7 +578,7 @@ window.App = window.App || {};
     bar.querySelector("#sync-pull-now").addEventListener("click", async () => {
       const res = await App.syncPull();
       bar.style.display = "none";
-      if (!res.ok && res.error) _toast("Ошибка: " + res.error, true);
+      if (!res.ok && res.error) _toast(App.t("error") + ": " + res.error, true);
     });
     bar.querySelector("#sync-dismiss").addEventListener("click", () => {
       bar.style.display = "none";
@@ -591,11 +593,11 @@ window.App = window.App || {};
     btn.innerHTML = `<i class="bi ${icons[m] || "bi-hdd"}"></i>`;
     btn.style.color = m === "local" ? "" : "var(--accent)";
     btn.title = {
-      local: "Синхронизация: выключена",
-      folder: "Синхронизация: общая папка",
-      host: "Синхронизация: этот компьютер — хост",
-      client: "Синхронизация: подключён к хосту",
-    }[m] || "Синхронизация";
+      local:  App.t("syncModeLocal")  || "Синхронизация: выключена",
+      folder: App.t("syncModeFolder") || "Синхронизация: общая папка",
+      host:   App.t("syncModeHost")   || "Синхронизация: этот компьютер — хост",
+      client: App.t("syncModeClient") || "Синхронизация: подключён к хосту",
+    }[m] || (App.t("sync") || "Синхронизация");
   }
   App.updateSyncBadge = _updateStatusBadge;
 

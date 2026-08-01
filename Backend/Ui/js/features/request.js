@@ -97,6 +97,12 @@ App.sendRequest = async function (tabId) {
   }
   tab.sending = false;
 
+  // История ответов: держим последние N — часто нужно «а что было 3 запроса назад».
+  // Кладём копию с метаданными: время, метод, URL — чтобы список читался без клика.
+  App.pushResponseHistory && App.pushResponseHistory(tab, tab.response, {
+    method: tab.method, url: finalUrl,
+  });
+
   // Test-скрипт после ответа — assertions идут в tab.lastTests
   if (tab.testScript && tab.response && App.runScript) {
     tab.lastTests = App.runScript(tab.testScript, {

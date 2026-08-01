@@ -40,6 +40,7 @@
     </button>
     <button id="terminal-btn" class="nav-bar-btn" data-i18n-title="terminal" title="Терминал (Ctrl+`)"><i class="bi bi-terminal"></i></button>
     <button id="load-test-btn" class="nav-bar-btn" title="Нагрузочное тестирование" data-i18n-title="loadTest"><i class="bi bi-lightning-charge"></i></button>
+    <button id="par-test-btn" class="nav-bar-btn" title="Параллельные тесты" data-i18n-title="parallelTests"><i class="bi bi-diagram-3"></i></button>
     <button id="metrics-btn" class="nav-bar-btn" data-i18n-title="navMetrics" title="Метрики запросов">
       <i class="bi bi-graph-up"></i>
     </button>
@@ -86,6 +87,9 @@
 <ul id="tab-context-menu" class="dropdown-menu">
   <li><button class="dropdown-item" data-action="rename" data-i18n="renameTab">
     <i class="bi bi-pencil me-1"></i> Переименовать
+  </button></li>
+  <li><button class="dropdown-item" data-action="copy-curl">
+    <i class="bi bi-terminal me-1"></i> <span data-i18n="copyAsCurl">Скопировать как cURL</span>
   </button></li>
   <li><hr class="dropdown-divider"></li>
   <li><button class="dropdown-item" data-action="close" data-i18n="closeTab">Закрыть вкладку</button></li>
@@ -169,6 +173,7 @@
 <script src="js/core/dialogs.js"></script>
 <script src="js/core/scripting.js"></script>
 <script src="js/core/hotkeys.js"></script>
+<script src="js/core/curl.js"></script>
 <script src="js/core/dynamicVars.js"></script>
 <script src="js/core/swagger.js"></script>
 <script src="js/core/state.js"></script>
@@ -179,11 +184,17 @@
 <script src="js/features/crud.js"></script>
 <script src="js/features/dynamicVarsUI.js"></script>
 <script src="js/features/swaggerUI.js"></script>
+<script src="js/features/curlUI.js"></script>
 <script src="js/features/updater.js"></script>
 <script src="js/features/logViewer.js"></script>
 <script src="js/features/loadTest.js"></script>
+<script src="js/features/parallelTest.js"></script>
 <script src="js/features/scriptConsole.js"></script>
 <script src="js/features/sidebarPosition.js"></script>
+<script src="js/features/environments.js"></script>
+<script src="js/features/responseHistory.js"></script>
+<script src="js/features/responseHistoryUI.js"></script>
+<script src="js/features/websocket.js"></script>
 <script src="js/features/metrics.js"></script>
 <script src="js/features/settings.js"></script>
 <script src="js/features/sync.js"></script>

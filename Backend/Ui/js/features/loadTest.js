@@ -825,11 +825,9 @@ window.App = window.App || {};
 
           <div class="modal-body">
             <div class="d-flex align-items-center gap-2 mb-2">
-              <label class="form-label mb-0" style="font-size:11px;color:var(--text-dim);white-space:nowrap;">
-                ${'Сессия'}:
-              </label>
+              <label class="form-label mb-0" style="font-size:11px;color:var(--text-dim);white-space:nowrap;" data-i18n="session">Сессия:</label>
               <select id="load-run-select" class="form-select form-select-sm" style="flex:1;font-size:12px;"></select>
-              <button class="btn btn-sm btn-outline-secondary" id="load-new-run" title="${'Новая сессия под активную вкладку'}">
+              <button class="btn btn-sm btn-outline-secondary" id="load-new-run" data-i18n-title="newSessionActive" title="Новая сессия под активную вкладку">
                 <i class="bi bi-plus-lg"></i>
               </button>
             </div>
@@ -858,7 +856,7 @@ window.App = window.App || {};
                   <i class="bi bi-stop-fill"></i> <span data-i18n="loadStop">Остановить</span>
                 </button>
                 <button class="btn btn-outline-secondary btn-sm" id="load-background" style="display:none;"
-                        title="${'Свернуть — тест продолжит крутиться в фоне'}">
+                        data-i18n-title="minimizeBg" title="Свернуть — тест продолжит крутиться в фоне">
                   <i class="bi bi-arrow-down-square"></i>
                 </button>
               </div>
@@ -868,9 +866,9 @@ window.App = window.App || {};
               <div class="col-md-3">
                 <label class="form-label" style="font-size:12px;" data-i18n="loadProfile">Профиль нагрузки</label>
                 <select id="load-profile" class="form-select form-select-sm">
-                  <option value="constant" data-i18n="profConstant">Постоянная (сразу N)</option>
-                  <option value="rampup"   data-i18n="profRampup">Ramp-up (плавно 1→N)</option>
-                  <option value="spike"    data-i18n="profSpike">Spike (резкий выброс)</option>
+                  <option value="constant" data-i18n-opt="profConstant">Постоянная (сразу N)</option>
+                  <option value="rampup"   data-i18n-opt="profRampup">Ramp-up (плавно 1→N)</option>
+                  <option value="spike"    data-i18n-opt="profSpike">Spike (резкий выброс)</option>
                 </select>
               </div>
               <div class="col-md-3" id="load-rampup-wrap" style="display:none;">

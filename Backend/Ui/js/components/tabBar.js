@@ -213,7 +213,7 @@
       title.textContent = App.tabTitle(tab);
       title.title = tab.url || App.tabTitle(tab);
 
-      // Двойной клик по заголовку — переименовать. В Postman так же.
+      // Двойной клик по заголовку — переименовать.
       title.addEventListener("dblclick", (e) => {
         e.stopPropagation();
         App.startRenamingTab(tab.id);

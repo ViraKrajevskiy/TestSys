@@ -63,6 +63,14 @@ window.App = window.App || {};
       action: () => document.getElementById("settings-btn")?.click() },
     { key: "ui.updates", group: "ui", i18n: "hkOpenUpdates", default: "Ctrl+U", whenInput: false,
       action: () => App.showUpdater && App.showUpdater() },
+    { key: "ui.parallel", group: "ui", i18n: "hkParallelTest", default: "Ctrl+Shift+P", whenInput: false,
+      action: () => App.showParallelTest && App.showParallelTest() },
+    { key: "ui.history", group: "ui", i18n: "hkResponseHistory", default: "Ctrl+H", whenInput: false,
+      action: () => App.showResponseHistoryUI && App.showResponseHistoryUI() },
+    { key: "ui.curl", group: "ui", i18n: "hkImportCurl", default: "Ctrl+Shift+I", whenInput: false,
+      action: () => App.showCurlImport && App.showCurlImport() },
+    { key: "ui.websocket", group: "ui", i18n: "hkWebsocket", default: "Ctrl+Shift+W", whenInput: false,
+      action: () => App.showWebSocket && App.showWebSocket() },
   ];
 
   // Активные сочетания: { "ctrl+t": {key,action,whenInput}, ... }

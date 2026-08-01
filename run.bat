@@ -8,7 +8,7 @@ setlocal enabledelayedexpansion
 cls
 echo.
 echo ====================================
-echo   TestSys - Postman on Python
+echo   TestSys - Desktop API Client
 echo ====================================
 echo.
 
@@ -83,7 +83,7 @@ echo.
 REM Открываем второе окно и запускаем приложение
 start "TestSys Desktop App" cmd /k ^
     cd /d "!CD!\Backend" ^& ^
-    title TestSys Desktop - Postman ^& ^
+    title TestSys Desktop ^& ^
     if not exist ".venv" ( ^
         echo Создаём virtual environment Backend... ^& ^
         python -m venv .venv ^

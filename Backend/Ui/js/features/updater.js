@@ -291,6 +291,7 @@ window.App = window.App || {};
     _setBusy(true);
     _progress(0, rel.size);
     _status(App.t("downloading"), "info");
+    _showNavBadge(0);
 
     try {
       const res = await api().download_update(rel.url, rel.size, rel.sha_url || "");
@@ -306,11 +307,17 @@ window.App = window.App || {};
         const s = await api().download_progress();
         _progress(s.done, s.total);
 
-        if (s.error) { clearInterval(_progressTimer); _fail(s.error); return; }
+        // Крупный прогресс — на активной кнопке «Обновить до ...» + в навбаре
+        const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
+        _markPendingButtonProgress(pct);
+        _showNavBadge(pct);
+
+        if (s.error) { clearInterval(_progressTimer); _hideNavBadge(); _fail(s.error); return; }
 
         if (s.finished && s.path) {
           clearInterval(_progressTimer);
           _status(App.t("installing"), "info");
+          _markPendingButtonProgress(100, App.t("installing"));
           document.getElementById("upd-install").style.display = "";
           document.getElementById("upd-install").disabled = false;
           // Ставим сразу — пользователь уже подтвердил
@@ -318,9 +325,53 @@ window.App = window.App || {};
         }
       } catch (e) {
         clearInterval(_progressTimer);
+        _hideNavBadge();
         _fail(String(e));
       }
     }, 400);
+  }
+
+  /** Отметить кнопку «Обновить до X.Y.Z» скачивающейся версии текстом с процентом. */
+  function _markPendingButtonProgress(pct, forcedText) {
+    if (!_pending) return;
+    const btns = document.querySelectorAll(`#upd-releases .upd-action[data-ver="${App.escapeAttr(_pending.version)}"]`);
+    btns.forEach(b => {
+      if (!b.dataset.origText) b.dataset.origText = b.textContent.trim();
+      b.disabled = true;
+      b.innerHTML = forcedText
+        ? `<i class="bi bi-hourglass-split me-1"></i>${forcedText}`
+        : `⏳ ${App.t("downloading") || "Скачивание"} ${pct}%`;
+    });
+  }
+
+  function _clearPendingButton() {
+    document.querySelectorAll("#upd-releases .upd-action").forEach(b => {
+      if (b.dataset.origText) {
+        b.textContent = b.dataset.origText;
+        delete b.dataset.origText;
+      }
+      b.disabled = false;
+    });
+  }
+
+  // Бейдж в навбаре — виден даже когда модалка закрыта
+  let _navBadgeEl = null;
+  function _showNavBadge(pct) {
+    const btn = document.getElementById("check-updates-btn");
+    if (!btn) return;
+    if (!_navBadgeEl) {
+      _navBadgeEl = document.createElement("span");
+      _navBadgeEl.className = "upd-nav-badge";
+      btn.style.position = "relative";
+      btn.appendChild(_navBadgeEl);
+    }
+    _navBadgeEl.textContent = pct + "%";
+    _navBadgeEl.style.display = "";
+    btn.classList.add("upd-nav-active");
+  }
+  function _hideNavBadge() {
+    if (_navBadgeEl) _navBadgeEl.style.display = "none";
+    document.getElementById("check-updates-btn")?.classList.remove("upd-nav-active");
   }
 
   async function _startInstall() {
@@ -371,6 +422,8 @@ window.App = window.App || {};
   function _fail(msg) {
     _setBusy(false);
     _progressHide();
+    _clearPendingButton();
+    _hideNavBadge();
     _status(App.t("error") + ": " + msg, "error");
     App.logError && App.logError("Updater", msg);
   }

@@ -41,10 +41,10 @@ window.App = window.App || {};
       const adminName    = document.getElementById("sync-admin-name").value.trim();
       const adminPw      = document.getElementById("sync-admin-pw").value;
       if (requireLogin && !adminName) {
-        App.showAlert("Укажите имя владельца"); return;
+        App.showAlert(App.t("adminNameRequired") || "Укажите имя владельца"); return;
       }
       if (requireLogin && !adminPw) {
-        App.showAlert("Задайте пароль владельца"); return;
+        App.showAlert(App.t("adminPwRequired") || "Задайте пароль владельца"); return;
       }
       const res = await App.syncHostStart({
         requireLogin, adminName, adminPassword: adminPw,
@@ -224,7 +224,7 @@ window.App = window.App || {};
         errEl.style.display = "none";
         const r = await App.syncLogin(nameEl.value.trim(), pwEl.value);
         if (!r.ok) {
-          errEl.textContent = r.error || "Ошибка входа";
+          errEl.textContent = r.error || (App.t("loginError") || "Ошибка входа");
           errEl.style.display = "";
           return;
         }
@@ -307,9 +307,9 @@ window.App = window.App || {};
         const name = document.getElementById("ua-name").value.trim();
         const pw   = document.getElementById("ua-pw").value;
         const role = document.getElementById("ua-role").value;
-        if (!name) { App.showAlert("Имя обязательно"); return; }
+        if (!name) { App.showAlert(App.t("nameRequired") || "Имя обязательно"); return; }
         const r = await App.syncSaveUser(name, pw, role);
-        if (!r.ok) { App.showAlert("Ошибка: " + (r.error || "")); return; }
+        if (!r.ok) { App.showAlert(App.t("error") + ": " + (r.error || "")); return; }
         document.getElementById("ua-name").value = "";
         document.getElementById("ua-pw").value = "";
         await _renderUsers();
@@ -319,8 +319,8 @@ window.App = window.App || {};
       document.getElementById("ua-acl-save").addEventListener("click", async () => {
         const acl = _readAclFromGrid();
         const r = await App.syncSaveAcl(acl);
-        if (!r.ok) { App.showAlert("Ошибка: " + (r.error || "")); return; }
-        App.syncToast("Права обновлены");
+        if (!r.ok) { App.showAlert(App.t("error") + ": " + (r.error || "")); return; }
+        App.syncToast(App.t("aclUpdated") || "Права обновлены");
       });
     }
     await _renderUsers();

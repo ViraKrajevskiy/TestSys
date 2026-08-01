@@ -5,7 +5,7 @@ cli.py — консольный режим TestSys.
 
     testsys run <collection.json> [--env env.json] [--bail] [--json]
         Прогоняет все запросы коллекции. Возвращает exit code 0 (все прошли)
-        или 1 (были провалы). Аналог Newman для Postman.
+        или 1 (были провалы). CI-раннер для коллекций TestSys.
 
     testsys import <endpoint> <data.csv|data.json> [--method POST]
         Для каждой строки данных отправляет запрос. Полезно для массового

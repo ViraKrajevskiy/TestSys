@@ -50,6 +50,42 @@ _sessions_lock = threading.Lock()
 SESSION_TTL_SEC = 8 * 3600           # 8 часов
 PBKDF2_ITER = 120_000                # itersions для хеша пароля
 
+# Rate-limit для /api/auth/login. Ключ — IP клиента.
+# Если больше LOGIN_MAX_ATTEMPTS неудачных попыток за LOGIN_WINDOW_SEC —
+# блокируем этот IP на LOGIN_BAN_SEC. Обычные ошибки пароля не должны
+# позволить brute-force через LAN.
+_login_attempts = {}
+_login_attempts_lock = threading.Lock()
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW_SEC = 60
+LOGIN_BAN_SEC = 300
+
+def _login_check_ratelimit(ip):
+    """Вернуть None если можно попробовать; иначе (seconds_left_until_unblocked, reason)."""
+    now = time.time()
+    with _login_attempts_lock:
+        rec = _login_attempts.get(ip) or {"fails": [], "banned_until": 0}
+        # Активная блокировка
+        if rec["banned_until"] > now:
+            return int(rec["banned_until"] - now), "banned"
+        # Чистим окно
+        rec["fails"] = [t for t in rec["fails"] if now - t < LOGIN_WINDOW_SEC]
+        _login_attempts[ip] = rec
+        if len(rec["fails"]) >= LOGIN_MAX_ATTEMPTS:
+            rec["banned_until"] = now + LOGIN_BAN_SEC
+            rec["fails"] = []
+            return LOGIN_BAN_SEC, "banned"
+    return None
+
+def _login_record_fail(ip):
+    with _login_attempts_lock:
+        rec = _login_attempts.setdefault(ip, {"fails": [], "banned_until": 0})
+        rec["fails"].append(time.time())
+
+def _login_reset(ip):
+    with _login_attempts_lock:
+        _login_attempts.pop(ip, None)
+
 def _hash_password(password, salt):
     """PBKDF2-SHA256 — стандартный, стойкий, есть в stdlib."""
     return hashlib.pbkdf2_hmac(
@@ -441,6 +477,12 @@ class _Handler(BaseHTTPRequestHandler):
         # ---------- AUTH ----------
         # Логин: {name, password} -> {token, user_id, role}
         if self.path.startswith("/api/auth/login"):
+            ip = self._client_ip()
+            rl = _login_check_ratelimit(ip)
+            if rl:
+                secs, _ = rl
+                self._send(429, {"error": f"Слишком много попыток. Попробуйте через {secs} сек.",
+                                 "retry_after": secs}); return
             body = self._read_body() or {}
             name = (body.get("name") or "").strip()
             pw   = body.get("password") or ""
@@ -448,8 +490,10 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send(400, {"error": "name и password обязательны"}); return
             uid, user = _find_user_by_name(name)
             if not user or _hash_password(pw, user.get("salt", "")) != user.get("password_hash"):
+                _login_record_fail(ip)
                 # Специально общее сообщение — чтобы не намекать, есть юзер или нет
                 self._send(401, {"error": "Неверное имя или пароль"}); return
+            _login_reset(ip)      # успешный вход обнуляет счётчик
             token = _create_session(uid, user, self._client_id())
             self._send(200, {
                 "ok": True, "token": token,

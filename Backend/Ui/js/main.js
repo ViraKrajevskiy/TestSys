@@ -48,6 +48,8 @@ App.init = function () {
   App.initSwaggerUI();
   App.initScriptConsole();
   App.initLoadTest();
+  App.initParallelTest && App.initParallelTest();
+  App.initEnvironments && App.initEnvironments();
   App.initUpdater();
   App.initSyncUI();
   App.initSettingsModal();

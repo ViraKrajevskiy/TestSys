@@ -217,6 +217,69 @@ window.App = window.App || {};
       canRead: "Читать", canWrite: "Изменять", collection: "Коллекция",
       login: "Войти", syncLoginTitle: "Вход в сессию",
       syncLoginHint: "Хост требует вход. Введите имя пользователя и пароль, выданные владельцем.",
+
+      // --- Параллельные тесты ---
+      parallelTests: "Параллельные тесты",
+      parHint: "Одновременно запускаем несколько разных запросов, чтобы найти race conditions: дедлоки, дубли записей, потерянные обновления.",
+      parIterations: "Итераций (раундов)", parRoundConcurrency: "Раундов параллельно",
+      parDelay: "Задержка между раундами (мс)", selected: "выбрано",
+      selectRequests: "Выберите запросы для параллельного запуска",
+      selectAll: "Все", selectNone: "Ничего",
+      noRequestsYet: "Нет сохранённых запросов. Добавьте в коллекции.",
+      selectAtLeastOne: "Выберите хотя бы один запрос",
+      rounds: "раундов", running: "Идёт тест…", aborted: "Остановлено", done: "Готово",
+      request: "Запрос", flags: "Флаги",
+
+      // --- cURL / импорт / WS / Env / History ---
+      importCurl: "Импорт cURL", copyAsCurl: "Скопировать как cURL",
+      copiedAsCurl: "Скопировано как cURL", noActiveRequest: "Нет активного запроса",
+      curlHint: "Вставьте команду curl из документации, DevTools (Copy → Copy as cURL) или своего скрипта.",
+      preview: "Разобрать", openAsTab: "Открыть как вкладку",
+      environment: "Окружение", noEnv: "no env", manageEnvs: "Управление окружениями…",
+      environments: "Окружения", envHint: "Разные значения переменных для dev/staging/prod. Активное окружение перебивает глобальные.",
+      envNamePlaceholder: "Имя нового окружения (dev, staging, prod)",
+      add: "Добавить", activate: "Сделать активным", active: "активно",
+      noEnvsYet: "Окружений пока нет. Добавьте dev/staging/prod выше.",
+      respHistory: "История ответов", saveBaseline: "Сохранить текущий как эталон",
+      clearBaseline: "Убрать эталон", showDiff: "Показать diff с эталоном",
+      clearHistory: "Очистить историю", baseline: "Эталон", noBaseline: "Эталон не задан",
+      historyEmpty: "История пуста", showing: "Показан",
+      noChangesFromBaseline: "Изменений относительно эталона нет",
+      baselineSaved: "Эталон сохранён",
+      hkResponseHistory: "История ответов", hkImportCurl: "Импорт cURL", hkWebsocket: "WebSocket-клиент",
+
+      // --- Мелкие ключи-подписи из свежих модалок ---
+      session: "Сессия:", newSessionActive: "Новая сессия под активную вкладку",
+      minimizeBg: "Свернуть — тест продолжит крутиться в фоне",
+      noDiff: "Нет данных",
+      updSrcDev: "запуск из исходников (python main.py). Auto-update отключён. Версия читается из Backend/version.py — правьте её перед сборкой (build.bat 1.0.5).",
+      updSrcExe: "собранный exe — auto-update работает",
+      load: "Загрузить", create: "Создать", start: "Старт", stop: "Стоп",
+      noUsersHint: 'Нет пользователей. Нажмите "Загрузить" или "Создать".',
+      usersLoadFail: "Не удалось загрузить пользователей",
+      // Sync statuses + errors
+      syncModeLocal:  "Синхронизация: выключена",
+      syncModeFolder: "Синхронизация: общая папка",
+      syncModeHost:   "Синхронизация: этот компьютер — хост",
+      syncModeClient: "Синхронизация: подключён к хосту",
+      syncOff: "Синхронизация выключена", noHostUrl: "Не задан адрес хоста",
+      kickedByAdmin: "Вас исключил admin", busy: "Занято",
+      syncBusyWait: "Уже идёт синхронизация, подождите…",
+      syncPulledFolder: "Загружено из общей папки", syncSavedFolder: "Сохранено в общую папку",
+      syncKicked: "Вас исключил admin. Синхронизация остановлена.",
+      aclUpdated: "Права обновлены", loginError: "Ошибка входа",
+      adminNameRequired: "Укажите имя владельца", adminPwRequired: "Задайте пароль владельца",
+      nameRequired: "Имя обязательно", alreadyExists: "Уже есть",
+      newChangesTitle: "Новые изменения в коллекциях",
+      newChangesMsg: "На хосте появилась версия {v}{by}. Загрузить сейчас?\n\nВаши локальные правки, не отправленные на хост, могут быть перезаписаны.",
+      from: "от",
+      // WebSocket messages
+      wsAlreadyOpen: "Уже открыто соединение. Закройте текущее и попробуйте снова.",
+      wsBadUrl: "URL должен начинаться с ws:// или wss://",
+      wsCreateFail: "Не удалось создать соединение",
+      wsOpening: "Открываю соединение с",
+      wsOpened: "Соединение установлено", wsError: "Ошибка соединения",
+      wsClosed: "Соединение закрыто", wsNoConn: "Нет активного соединения",
       giveAddresses: "Дайте участникам один из адресов:",
       collectionsChanged: "Коллекции изменены другим участником", load: "Загрузить", hide: "Скрыть",
       passwordIfSet: "Пароль (если задан на хосте)", checking: "Проверяю...",
@@ -480,6 +543,18 @@ window.App = window.App || {};
       canRead: "Read", canWrite: "Write", collection: "Collection",
       login: "Log in", syncLoginTitle: "Session login",
       syncLoginHint: "The host requires login. Enter the username and password given by the owner.",
+
+      // --- Parallel tests ---
+      parallelTests: "Parallel tests",
+      parHint: "Fire multiple different requests at the same time to find race conditions: deadlocks, duplicate records, lost updates.",
+      parIterations: "Iterations (rounds)", parRoundConcurrency: "Rounds in parallel",
+      parDelay: "Delay between rounds (ms)", selected: "selected",
+      selectRequests: "Pick requests to run in parallel",
+      selectAll: "All", selectNone: "None",
+      noRequestsYet: "No saved requests. Add some to collections first.",
+      selectAtLeastOne: "Pick at least one request",
+      rounds: "rounds", running: "Running…", aborted: "Aborted", done: "Done",
+      request: "Request", flags: "Flags",
       giveAddresses: "Give participants one of these addresses:",
       collectionsChanged: "Collections changed by another participant", load: "Load", hide: "Hide",
       passwordIfSet: "Password (if set on host)", checking: "Checking...",
@@ -538,6 +613,49 @@ window.App = window.App || {};
       avgTime: "Avg time", minMax: "Min / Max", totalSize: "Total size",
       byStatus: "By status", byMethod: "By method", clear: "Clear",
       noMetrics: "No data. Send a request.", when: "When", size: "Size", time: "Time",
+
+      // --- Fresh keys ---
+      session: "Session:", newSessionActive: "New session for the active tab",
+      minimizeBg: "Minimize — the test keeps running in background",
+      noDiff: "No data",
+      updSrcDev: "running from source (python main.py). Auto-update is off. Version comes from Backend/version.py — edit it before building (build.bat 1.0.5).",
+      updSrcExe: "built exe — auto-update works",
+      load: "Load", create: "Create", start: "Start", stop: "Stop",
+      noUsersHint: 'No users yet. Click "Load" or "Create".',
+      usersLoadFail: "Failed to load users",
+      syncModeLocal:  "Sync: off",
+      syncModeFolder: "Sync: shared folder",
+      syncModeHost:   "Sync: this machine is host",
+      syncModeClient: "Sync: connected to host",
+      syncOff: "Sync is off", noHostUrl: "Host address not set",
+      kickedByAdmin: "Kicked by admin", busy: "Busy",
+      syncBusyWait: "Sync already in progress, please wait…",
+      syncPulledFolder: "Loaded from shared folder", syncSavedFolder: "Saved to shared folder",
+      syncKicked: "Admin kicked you. Sync stopped.",
+      aclUpdated: "Permissions updated", loginError: "Login error",
+      adminNameRequired: "Owner name required", adminPwRequired: "Owner password required",
+      nameRequired: "Name required", alreadyExists: "Already exists",
+      newChangesTitle: "New changes in collections",
+      newChangesMsg: "Version {v}{by} is on the host. Load now?\n\nYour local edits not pushed to the host may be overwritten.",
+      from: "from",
+      wsAlreadyOpen: "Connection is already open. Close the current one and try again.",
+      wsBadUrl: "URL must start with ws:// or wss://",
+      wsCreateFail: "Failed to create connection",
+      wsOpening: "Opening connection to",
+      wsOpened: "Connected", wsError: "Connection error",
+      wsClosed: "Connection closed", wsNoConn: "No active connection",
+
+      // --- English fills for keys added later on RU side ---
+      add: "Add", preview: "Parse",
+      importCurl: "Import cURL", copiedAsCurl: "Copied as cURL",
+      curlHint: "Paste a curl command from docs, DevTools (Copy → Copy as cURL) or your script.",
+      environment: "Environment", environments: "Environments",
+      envNamePlaceholder: "New environment name (dev, staging, prod)",
+      noEnvsYet: "No environments yet. Add dev/staging/prod above.",
+      respHistory: "Response history", historyEmpty: "History is empty",
+      clearHistory: "Clear history", clearBaseline: "Clear baseline",
+      noChangesFromBaseline: "No changes vs baseline", baselineSaved: "Baseline saved",
+      hkResponseHistory: "Response history",
     },
   };
 
@@ -570,9 +688,46 @@ window.App = window.App || {};
       // Перевод не должен ронять приложение
       if (App.logWarn) App.logWarn("i18n", "Ошибка перерисовки при смене языка: " + e.message);
     }
+
+    // Модалки, построенные лениво через `${App.t(...)}` в HTML-шаблоне,
+    // не обновляются автоматически — они строятся один раз при первом
+    // открытии. Удаляем их из DOM: при следующем открытии пересоберутся
+    // на актуальном языке.
+    LAZY_MODAL_IDS.forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && !el.classList.contains("show")) el.remove();
+    });
+
+    // Даём слушателям знать — модули могут перерисовать свои DOM-фрагменты
+    _langListeners.forEach((fn) => { try { fn(_lang); } catch (_) {} });
   };
 
-  /** Применить переводы к элементам с data-i18n / data-i18n-title / data-i18n-ph */
+  const _langListeners = [];
+  /** Подписка на смену языка — для модулей, которые сами перерисовывают своё DOM. */
+  App.onLangChange = function (fn) {
+    if (typeof fn === "function") _langListeners.push(fn);
+  };
+
+  /**
+   * ТОЛЬКО ленивые модалки — те, чья open-функция сама проверяет
+   * `if (!document.getElementById(id)) build()`. При смене языка удаляем
+   * их из DOM, при следующем open() пересоберутся с новым языком.
+   *
+   * НЕ включаем сюда модалки, которые построены жёстко в init() —
+   * такие после удаления никто не пересоберёт, и в них полезут null-ошибки
+   * при следующем открытии. Для них язык применяется при переоткрытии
+   * приложения (или отдельным rebuild-механизмом).
+   */
+  const LAZY_MODAL_IDS = [
+    "ws-modal",              // websocket.js — lazy
+    "resp-hist-modal",       // responseHistoryUI.js — lazy
+    "curl-import-modal",     // curlUI.js — lazy
+    "env-mgr-modal",         // environments.js — lazy
+    "sync-usersacl-modal",   // syncUI.js — lazy
+    "sync-login-modal",      // syncUI.js — создаётся заново каждый раз
+  ];
+
+  /** Применить переводы к элементам с data-i18n / data-i18n-title / data-i18n-ph / data-i18n-opt */
   App.applyTranslations = function (root) {
     const scope = root || document;
     scope.querySelectorAll("[data-i18n]").forEach(el => {
@@ -583,6 +738,11 @@ window.App = window.App || {};
     });
     scope.querySelectorAll("[data-i18n-ph]").forEach(el => {
       el.placeholder = App.t(el.dataset.i18nPh);
+    });
+    // Для <option> в <select> нужно менять именно .text, textContent тоже работает,
+    // но браузер иногда кэширует .text. Так надёжнее.
+    scope.querySelectorAll("[data-i18n-opt]").forEach(el => {
+      el.text = App.t(el.dataset.i18nOpt);
     });
   };
 

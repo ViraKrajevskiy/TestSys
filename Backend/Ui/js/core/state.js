@@ -281,11 +281,17 @@ App.exportCollections = async function (col) {
   return { ok: true };
 };
 
-/** Разбор содержимого файла → массив коллекций */
+/** Разбор содержимого файла → массив коллекций (нативный формат TestSys + совместимый) */
 App.parseImportPayload = function (raw) {
   let data;
   try { data = JSON.parse(raw); }
   catch (e) { return { ok: false, error: "Файл не является валидным JSON" }; }
+
+  // Определяем совместимый формат коллекций (info.schema + item[])
+  const info = data && data.info;
+  if (info && Array.isArray(data.item)) {
+    return _fromExternalFormat(data);
+  }
 
   let cols = [];
   let vars = null;
@@ -307,6 +313,83 @@ App.parseImportPayload = function (raw) {
 
   return { ok: true, collections: valid, variables: vars };
 };
+
+/**
+ * Импорт из совместимого формата (info + item[]) в наш нативный формат.
+ * Структура: info.name + item[]. Каждый item — либо папка (item[] внутри),
+ * либо request. Разворачиваем в { name, folders:[{name, items:[]}] }.
+ * Вложенные папки схлопываем до одного уровня через " / " в имени.
+ */
+function _fromExternalFormat(src) {
+  const colName = (src.info && src.info.name) || "Imported collection";
+  const folders = [];
+
+  const walk = (nodes, path) => {
+    const localReqs = [];
+    (nodes || []).forEach(n => {
+      if (n.request) localReqs.push(_externalItemToRequest(n));
+      else if (Array.isArray(n.item)) walk(n.item, path.concat(n.name || "folder"));
+    });
+    if (localReqs.length) {
+      folders.push({ name: path.join(" / ") || "root", items: localReqs });
+    }
+  };
+  walk(src.item || [], []);
+
+  const vars = {};
+  (src.variable || []).forEach(v => { if (v && v.key) vars[v.key] = v.value != null ? String(v.value) : ""; });
+
+  return {
+    ok: true,
+    collections: [{ name: colName, folders: folders.length ? folders : [{ name: "root", items: [] }] }],
+    variables: Object.keys(vars).length ? vars : null,
+  };
+}
+
+function _externalItemToRequest(item) {
+  const r = item.request || {};
+  const method = (typeof r === "string") ? "GET" : (r.method || "GET").toUpperCase();
+
+  let url = "";
+  if (typeof r.url === "string") url = r.url;
+  else if (r.url) {
+    if (typeof r.url.raw === "string") url = r.url.raw;
+    else {
+      const host = Array.isArray(r.url.host) ? r.url.host.join(".") : (r.url.host || "");
+      const path = Array.isArray(r.url.path) ? r.url.path.join("/") : (r.url.path || "");
+      url = host + (path ? "/" + path : "");
+    }
+  }
+
+  const headers = (r.header || []).filter(h => !h.disabled).map(h => ({
+    key: h.key || "", value: h.value != null ? String(h.value) : "", enabled: true,
+  }));
+
+  let body = "";
+  if (r.body) {
+    if (r.body.mode === "raw") body = r.body.raw || "";
+    else if (r.body.mode === "urlencoded" && Array.isArray(r.body.urlencoded)) {
+      body = r.body.urlencoded.filter(p => !p.disabled)
+        .map(p => encodeURIComponent(p.key) + "=" + encodeURIComponent(p.value || "")).join("&");
+    }
+  }
+
+  // Скрипты переносим 1:1 — тот же pm.* API
+  let preScript = "", testScript = "";
+  (item.event || []).forEach(ev => {
+    const code = (ev.script && ev.script.exec) ? ev.script.exec.join("\n") : "";
+    if (ev.listen === "prerequest") preScript = code;
+    else if (ev.listen === "test")  testScript = code;
+  });
+
+  return {
+    name: item.name || method + " request",
+    method, url, body,
+    headers: headers.length ? headers : [{ key: "", value: "", enabled: true }],
+    params: [{ key: "", value: "", enabled: true }],
+    preScript, testScript,
+  };
+}
 
 /** Импорт: добавляет коллекции, разрешая конфликты имён */
 App.importCollections = async function (opts) {
@@ -430,7 +513,7 @@ App.USER_AGENTS = [
   { label: "iPhone Safari", value: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1" },
   { label: "Android Chrome", value: "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.43 Mobile Safari/537.36" },
   { label: "curl/8.4.0", value: "curl/8.4.0" },
-  { label: "Postman", value: "PostmanRuntime/7.35.0" },
+  { label: "TestSys", value: "TestSys/1.0" },
   { label: "Python requests", value: "python-requests/2.31.0" },
   { label: "Googlebot", value: "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)" },
 ];
