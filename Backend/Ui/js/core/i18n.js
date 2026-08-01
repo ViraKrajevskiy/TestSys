@@ -340,6 +340,7 @@ window.App = window.App || {};
       avgTime: "Ср. время", minMax: "Мин / Макс", totalSize: "Общий размер",
       byStatus: "По статусам", byMethod: "По методам", clear: "Очистить",
       noMetrics: "Нет данных. Отправьте запрос.", when: "Когда", size: "Размер", time: "Время",
+      lastChecked: "Последняя проверка",
     },
 
     en: {
@@ -613,6 +614,7 @@ window.App = window.App || {};
       avgTime: "Avg time", minMax: "Min / Max", totalSize: "Total size",
       byStatus: "By status", byMethod: "By method", clear: "Clear",
       noMetrics: "No data. Send a request.", when: "When", size: "Size", time: "Time",
+      lastChecked: "Last checked",
 
       // --- Fresh keys ---
       session: "Session:", newSessionActive: "New session for the active tab",

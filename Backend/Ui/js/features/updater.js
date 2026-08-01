@@ -38,11 +38,13 @@ window.App = window.App || {};
     document.getElementById("upd-prerelease").addEventListener("change", () => _check(false));
     document.getElementById("upd-cleanup").addEventListener("click", _cleanup);
 
-    // Тихая проверка при запуске — только в собранном приложении
+    // Тихая проверка при запуске — только в собранном приложении.
+    // Кулдаун 1 час: если уже проверяли недавно — пропускаем, чтоб не флудить GitHub.
     setTimeout(async () => {
       _info = await _getInfo();
       if (!_info || !_info.frozen) return;
       if (App.getSetting && App.getSetting("autoCheckUpdates") === false) return;
+      if (_isCheckCoolingDown()) return;
       _check(true);
     }, 4000);
   };
@@ -50,6 +52,23 @@ window.App = window.App || {};
   async function _getInfo() {
     if (!api() || !api().get_app_version) return null;
     try { return await api().get_app_version(); } catch (_) { return null; }
+  }
+
+  // ============================================================
+  // КУЛДАУН — не флудим GitHub при частых перезапусках
+  // ============================================================
+  const _CHECK_COOLDOWN_MS = 60 * 60 * 1000; // 1 час
+  const _CHECK_TS_KEY = "tsys.lastUpdateCheck";
+
+  function _isCheckCoolingDown() {
+    try {
+      const ts = parseInt(localStorage.getItem(_CHECK_TS_KEY) || "0", 10);
+      return ts && (Date.now() - ts < _CHECK_COOLDOWN_MS);
+    } catch (_) { return false; }
+  }
+
+  function _saveCheckTimestamp() {
+    try { localStorage.setItem(_CHECK_TS_KEY, String(Date.now())); } catch (_) {}
   }
 
   // ============================================================
@@ -75,6 +94,7 @@ window.App = window.App || {};
       _latest = res.latest;
       _info = _info || {};
       _info.version = res.current;
+      _saveCheckTimestamp(); // запомним время — следующий автостарт пропустит проверку
 
       if (res.has_update) {
         _showBanner(res.latest, res.current);
@@ -157,6 +177,7 @@ window.App = window.App || {};
 
     await _loadBackups();
     _renderModal();
+    _renderLastCheckTime();
     _modal.show();
     if (!_releases.length) _check(false);
   };
@@ -172,6 +193,22 @@ window.App = window.App || {};
   function _renderModal() {
     _renderReleases();
     _renderBackups();
+  }
+
+  function _renderLastCheckTime() {
+    const el = document.getElementById("upd-last-check");
+    if (!el) return;
+    try {
+      const ts = parseInt(localStorage.getItem(_CHECK_TS_KEY) || "0", 10);
+      if (!ts) { el.textContent = ""; return; }
+      const d = new Date(ts);
+      const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      const today = new Date();
+      const dateStr = (d.toDateString() === today.toDateString())
+        ? hm
+        : d.toLocaleDateString() + " " + hm;
+      el.textContent = (App.t("lastChecked") || "Последняя проверка") + ": " + dateStr;
+    } catch (_) {}
   }
 
   function _renderReleases() {
@@ -507,7 +544,7 @@ window.App = window.App || {};
               </ol>
             </div>
 
-            <div class="d-flex gap-2 align-items-center my-2">
+            <div class="d-flex gap-2 align-items-center my-2 flex-wrap">
               <button class="btn btn-sm send-btn" id="upd-check">
                 <i class="bi bi-arrow-clockwise me-1"></i><span data-i18n="checkNow">Проверить</span>
               </button>
@@ -517,6 +554,7 @@ window.App = window.App || {};
                   Показывать тестовые версии
                 </label>
               </div>
+              <span id="upd-last-check" style="font-size:10px;color:var(--text-dim);margin-left:auto;"></span>
             </div>
 
             <div id="upd-status" class="upd-status" style="display:none;"></div>
