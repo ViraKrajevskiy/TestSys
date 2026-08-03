@@ -127,16 +127,7 @@ window.App = window.App || {};
       }
     });
 
-    document.getElementById("sync-auto-apply").addEventListener("change", (e) => {
-      App.syncSetAutoApply(e.target.checked);
-      try { localStorage.setItem("sync.autoApply", e.target.checked ? "1" : "0"); } catch (_) {}
-    });
-    // Подтягиваем сохранённое значение при открытии
-    try {
-      const saved = localStorage.getItem("sync.autoApply") === "1";
-      App.syncSetAutoApply(saved);
-      document.getElementById("sync-auto-apply").checked = saved;
-    } catch (_) {}
+    // autoApply удалён — всегда спрашивать при конфликтах
 
     // Подписываемся на обновления списка участников (пуш каждые 8с из _poll)
     App.onSyncEvent && App.onSyncEvent((kind) => {
@@ -755,12 +746,6 @@ window.App = window.App || {};
               <button class="btn btn-sm btn-outline-danger" id="sync-logout-btn">
                 <i class="bi bi-box-arrow-right me-1"></i><span data-i18n="syncLogout">Выйти из сессии</span>
               </button>
-              <div class="form-check form-switch ms-auto d-flex align-items-center">
-                <input class="form-check-input me-1" type="checkbox" id="sync-auto-apply">
-                <label class="form-check-label" for="sync-auto-apply" style="font-size:11px;" data-i18n="syncAutoApply">
-                  Автозагружать без спроса
-                </label>
-              </div>
             </div>
 
             <!-- Живой список участников — обновляется каждые 8 сек -->

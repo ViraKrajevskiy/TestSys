@@ -11,6 +11,7 @@ window.App = window.App || {};
   let _target = null;       // поле, куда вставлять
   let _targetSel = null;    // позиция курсора, снятая В МОМЕНТ ОТКРЫТИЯ
   let _search = "";
+  let _copyOnly = false;    // режим: только копировать, не вставлять в поле
 
   // Режим "fields" — в теле готовый JSON, заполняем его поля.
   // Режим "list"   — обычный справочник переменных.
@@ -251,7 +252,9 @@ window.App = window.App || {};
 
       item.querySelector(".dynvar-copy").addEventListener("click", (e) => {
         e.stopPropagation();
-        navigator.clipboard.writeText(token);
+        _copyOnly = true;
+        _insert(token);
+        _copyOnly = false;
         const btn = e.currentTarget;
         const old = btn.innerHTML;
         btn.innerHTML = '<i class="bi bi-check-lg"></i>';

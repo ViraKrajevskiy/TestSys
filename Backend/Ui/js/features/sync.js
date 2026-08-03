@@ -21,7 +21,6 @@ window.App = window.App || {};
   let _clients = [];           // последний известный список участников
   let _myRole = "member";
   let _myUserId = "";
-  let _autoApply = false;      // авто-применять новые версии без диалога (настройка)
   let _promptOpen = false;     // диалог «загрузить новые изменения?» уже открыт
   let _loginPromptOpen = false;// «требуется вход» модалка уже открыта
 
@@ -305,12 +304,8 @@ window.App = window.App || {};
           _publish("role");
         }
         if (ping.data.version > _lastKnownVersion) {
-          if (_autoApply) {
-            const pr = await App.syncPull(true);
-            if (pr.ok) _toast(`Автозагрузка: версия ${pr.version}`);
-          } else {
-            _openChangesDialog(ping.data.version);
-          }
+          // Всегда спрашиваем, не авто-применяем
+          _openChangesDialog(ping.data.version);
         }
       }
     } catch (_) { /* тихо */ }
@@ -443,8 +438,7 @@ window.App = window.App || {};
     return await api().sync_session_kick(url, token, clientId(), targetId, seconds || 300);
   };
 
-  App.syncSetAutoApply = (on) => { _autoApply = !!on; };
-  App.syncGetAutoApply = () => _autoApply;
+  // autoApply удалён — всегда спрашивать
 
   // ============================================================
   // ЛОГИН / ЛОГАУТ (per-user auth)
