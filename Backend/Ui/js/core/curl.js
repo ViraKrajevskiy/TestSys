@@ -185,7 +185,7 @@ window.App = window.App || {};
     const method = (tab.method || "GET").toUpperCase();
     let url = resolve(tab.url || "");
     // Пришиваем query-параметры
-    const pick = App.activeRows || ((rows) => (rows || []).filter(r => (r.key || "").trim()));
+    const pick = App.activeRows || ((rows) => (rows || []).filter(r => r.enabled !== false && (r.key || "").trim()));
     const params = pick(tab.params);
     if (params.length) {
       const qs = params.map(p => encodeURIComponent(resolve(p.key)) + "=" +

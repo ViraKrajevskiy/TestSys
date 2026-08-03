@@ -334,6 +334,23 @@ window.App = window.App || {};
         }
       });
 
+      // Кнопка ⚡ — генерация значения по имени ключа
+      const genBtn = document.createElement("button");
+      genBtn.className = "kv-gen-btn";
+      genBtn.title = App.t("kvGenerate") || "Сгенерировать значение";
+      genBtn.innerHTML = "⚡";
+      if (isLast && !_rowFilled(row)) genBtn.style.visibility = "hidden";
+      genBtn.addEventListener("click", () => {
+        const key = row.key.trim();
+        if (!key) return;
+        const val = _smartGenerate(key);
+        row.value = val;
+        valInput.value = val;
+        valInput.dispatchEvent(new Event("input"));
+      });
+      // Вставляем ⚡ перед кнопкой удаления
+      removeBtn.parentNode.insertBefore(genBtn, removeBtn);
+
       // Удаление строки
       removeBtn.title = App.t("delete");
       if (isLast && !_rowFilled(row)) {
@@ -347,6 +364,79 @@ window.App = window.App || {};
       rowsContainer.appendChild(node);
     });
   };
+
+  // ============================================================
+  // УМНАЯ ГЕНЕРАЦИЯ ЗНАЧЕНИЯ ПО ИМЕНИ КЛЮЧА
+  // ============================================================
+  /**
+   * По имени ключа (param или header) подбирает подходящее значение.
+   * Приоритет: известные заголовки → динамические переменные → смарт-фил.
+   */
+  function _smartGenerate(key) {
+    const k = key.toLowerCase().replace(/[-_\s]/g, "");
+
+    // ── Специальные HTTP-заголовки ─────────────────────────────
+    if (k === "authorization" || k === "authorization")
+      return "Bearer {{$randomPassword}}";
+    if (k === "contenttype")      return "application/json";
+    if (k === "accept")           return "application/json";
+    if (k === "acceptlanguage")   return "ru-RU,ru;q=0.9,en;q=0.8";
+    if (k === "cachecontrol")     return "no-cache";
+    if (k === "xrequestid" || k === "requestid" || k === "correlationid" || k === "traceid")
+      return _gen("randomUUID");
+    if (k === "xtimestamp" || k === "timestamp")
+      return _gen("isoTimestamp");
+    if (k === "xapikey" || k === "apikey" || k === "apikeyid")
+      return _gen("randomUUID");
+    if (k === "xforwardedfor" || k === "clientip" || k === "realip")
+      return _gen("randomIP");
+    if (k === "useragent")        return _gen("randomUserAgent");
+    if (k === "referer" || k === "origin")
+      return _gen("randomUrl");
+
+    // ── По смыслу имени ────────────────────────────────────────
+    if (/email/.test(k))          return _gen("randomEmail");
+    if (/phone|tel/.test(k))      return _gen("randomPhone");
+    if (/password|passwd|secret/.test(k)) return _gen("randomPassword");
+    if (/uuid|guid/.test(k))      return _gen("randomUUID");
+    if (/objectid|mongoid/.test(k)) return _gen("randomObjectId");
+    if (/username|login/.test(k)) return _gen("randomUserName");
+    if (/firstname|fname/.test(k)) return _gen("randomFirstName");
+    if (/lastname|lname|surname/.test(k)) return _gen("randomLastName");
+    if (/fullname|name/.test(k))  return _gen("randomFullName");
+    if (/company|org/.test(k))    return _gen("randomCompany");
+    if (/city/.test(k))           return _gen("randomCity");
+    if (/country/.test(k))        return _gen("randomCountry");
+    if (/street|address/.test(k)) return _gen("randomStreet");
+    if (/zip|postal/.test(k))     return _gen("randomZipCode");
+    if (/url|website|link/.test(k)) return _gen("randomUrl");
+    if (/domain/.test(k))         return _gen("randomDomain");
+    if (/ip$|ipaddr/.test(k))     return _gen("randomIP");
+    if (/status|state/.test(k))   return _gen("randomStatus");
+    if (/date/.test(k))           return _gen("randomDate");
+    if (/price|amount|cost|total/.test(k)) return _gen("randomPrice");
+    if (/age|count|limit|size|page|offset|skip|id$|^id/.test(k))
+      return _gen("randomInt");
+    if (/token|key$|secret/.test(k)) return _gen("randomPassword");
+    if (/color|colour/.test(k))   return ["red","green","blue","black","white"][Math.floor(Math.random()*5)];
+    if (/lang|language|locale/.test(k)) return ["ru","en","de","fr","es"][Math.floor(Math.random()*5)];
+    if (/currency/.test(k))       return _gen("randomCurrency");
+    if (/bool|flag|active|enabled|verified/.test(k)) return Math.random() > 0.5 ? "true" : "false";
+    if (/text|comment|description|message|body|content|note/.test(k))
+      return _gen("randomSentence");
+    if (/tag|label|category/.test(k)) return _gen("randomWord");
+
+    // ── Fallback: генерим случайную строку ─────────────────────
+    return _gen("randomWord");
+  }
+
+  /** Вызвать генератор из App.GENERATORS если доступен, иначе eval через App.resolveAll */
+  function _gen(name) {
+    try {
+      if (App.GENERATORS && App.GENERATORS[name]) return String(App.GENERATORS[name].fn());
+    } catch (_) {}
+    return `{{$${name}}}`;   // fallback — вставляем переменную, она раскроется при отправке
+  }
 
   // ============================================================
   // РЕДАКТОР СКРИПТОВ (Pre-request / Tests)

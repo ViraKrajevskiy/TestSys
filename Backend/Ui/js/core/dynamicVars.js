@@ -111,6 +111,9 @@ window.App = window.App || {};
     randomHexColor:   { fn: () => "#" + rnd(16777216).toString(16).padStart(6, "0"), group: "text", ex: "#3fa9c8" },
   };
 
+  // Публичный доступ к реестру — для smartGenerate в tabContent
+  App.GENERATORS = GENERATORS;
+
   // ============================================================
   // РЕЗОЛВ
   // ============================================================

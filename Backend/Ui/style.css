@@ -897,6 +897,20 @@ body {
 .kv-row.kv-row-grid:hover .kv-remove { opacity: 1; }
 .kv-row.kv-row-grid .kv-remove:hover { color: #dc3545 !important; }
 
+.kv-gen-btn {
+  border: none !important;
+  background: transparent !important;
+  color: var(--text-dim) !important;
+  padding: 4px !important;
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity .12s, color .12s;
+  cursor: pointer;
+}
+.kv-row.kv-row-grid:hover .kv-gen-btn { opacity: 1; }
+.kv-gen-btn:hover { color: var(--accent) !important; }
+
 .kv-hint {
   font-size: 10.5px;
   color: var(--text-dim);
