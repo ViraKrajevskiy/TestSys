@@ -162,19 +162,6 @@ window.App = window.App || {};
     document.getElementById("upd-current").textContent = _info.version || "—";
     document.getElementById("upd-repo").textContent = _info.repo || "—";
 
-    // Явно показываем, откуда версия: из собранного exe или из исходников.
-    // Это ключевое: если пользователь бежит из source, обновление не пройдёт
-    // и версия в файле version.py — единственный источник правды.
-    const src = document.getElementById("upd-src-mode");
-    if (src) {
-      src.innerHTML = _info.frozen
-        ? `<span style="color:#22c55e;">📦 ${App.t("updSrcExe") || "собранный exe — auto-update работает"}</span>`
-        : `<span style="color:#ffc107;">🛠 ${App.t("updSrcDev") || "запуск из исходников (python main.py). Auto-update отключён. Версия читается из Backend/version.py — правьте её перед сборкой (build.bat 1.0.5)."}</span>`;
-    }
-
-    const devWarn = document.getElementById("upd-dev-warn");
-    devWarn.style.display = _info.frozen ? "none" : "";
-
     await _loadBackups();
     _renderModal();
     _renderLastCheckTime();
@@ -529,19 +516,6 @@ window.App = window.App || {};
               <span data-i18n="currentVersion">Текущая версия</span>:
               <strong id="upd-current">—</strong>
               <span class="upd-repo" id="upd-repo"></span>
-            </div>
-            <div id="upd-src-mode" style="font-size:11px;margin-top:4px;"></div>
-
-            <div id="upd-dev-warn" class="upd-status upd-warn" style="display:none;">
-              <span data-i18n="devModeNoUpdate">Обновление доступно только в собранном приложении, не при запуске из исходников.</span>
-              <br><br>
-              <b>Как поднять версию:</b>
-              <ol style="margin:6px 0 0 20px;padding:0;font-size:11px;">
-                <li>Закройте приложение.</li>
-                <li>В корне проекта: <code>build.bat 1.0.5</code> (или <code>build.bat bump patch</code>).</li>
-                <li>Загрузите новый <code>dist\\TestSys.exe</code> (или <code>dist.zip</code>) в GitHub Release с тегом <code>v1.0.5</code>.</li>
-                <li>Запустите новый exe — он покажет актуальную версию и увидит релиз.</li>
-              </ol>
             </div>
 
             <div class="d-flex gap-2 align-items-center my-2 flex-wrap">
