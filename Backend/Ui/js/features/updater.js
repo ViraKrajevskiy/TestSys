@@ -55,20 +55,50 @@ window.App = window.App || {};
   }
 
   // ============================================================
-  // КУЛДАУН — не флудим GitHub при частых перезапусках
+  // КУЛДАУН + КЕШ — не флудим GitHub
+  // Кулдаун распространяется на ВСЕ пути проверки (авто, кнопка,
+  // открытие модалки, тумблер prerelease). Кеш живёт между запусками
+  // и показывается, когда живой запрос делать нельзя.
   // ============================================================
   const _CHECK_COOLDOWN_MS = 60 * 60 * 1000; // 1 час
   const _CHECK_TS_KEY = "tsys.lastUpdateCheck";
+  const _CACHE_KEY    = "tsys.updater.cache";
 
-  function _isCheckCoolingDown() {
+  function _cooldownRemainingMs() {
     try {
       const ts = parseInt(localStorage.getItem(_CHECK_TS_KEY) || "0", 10);
-      return ts && (Date.now() - ts < _CHECK_COOLDOWN_MS);
-    } catch (_) { return false; }
+      if (!ts) return 0;
+      const left = _CHECK_COOLDOWN_MS - (Date.now() - ts);
+      return left > 0 ? left : 0;
+    } catch (_) { return 0; }
+  }
+
+  function _isCheckCoolingDown() {
+    return _cooldownRemainingMs() > 0;
   }
 
   function _saveCheckTimestamp() {
     try { localStorage.setItem(_CHECK_TS_KEY, String(Date.now())); } catch (_) {}
+  }
+
+  function _saveCache(payload) {
+    try { localStorage.setItem(_CACHE_KEY, JSON.stringify(payload)); } catch (_) {}
+  }
+
+  function _loadCache() {
+    try {
+      const raw = localStorage.getItem(_CACHE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) { return null; }
+  }
+
+  function _fmtLeft(ms) {
+    const m = Math.ceil(ms / 60000);
+    if (m >= 60) {
+      const h = Math.floor(m / 60), mm = m % 60;
+      return mm ? `${h} ч ${mm} мин` : `${h} ч`;
+    }
+    return `${m} мин`;
   }
 
   // ============================================================
@@ -81,12 +111,41 @@ window.App = window.App || {};
     }
 
     const pre = document.getElementById("upd-prerelease")?.checked || false;
+
+    // Кулдаун едина для всех входов. Если рано — показываем то, что
+    // получили в прошлый раз (из кеша), не долбим GitHub.
+    const left = _cooldownRemainingMs();
+    if (left > 0) {
+      const cache = _loadCache();
+      if (cache) {
+        _releases = (cache.releases || []).filter(r => pre || !r.prerelease);
+        _latest = cache.latest || null;
+        _info = _info || {};
+        if (cache.current) _info.version = cache.current;
+        _renderModal();
+      }
+      if (!silent) {
+        _status(`Подождите ${_fmtLeft(left)} — GitHub не любит частые запросы`, "warn");
+      }
+      return;
+    }
+
     if (!silent) _status(App.t("checking"), "info");
 
     try {
       const res = await api().check_updates("", pre, "");
       if (!res.ok) {
+        // Ставим таймстемп и при ошибке (в т.ч. rate-limit), иначе
+        // ретрай тут же полетит снова.
+        _saveCheckTimestamp();
         if (!silent) _status(res.error, "error");
+        // При rate-limit покажем то, что успели закешировать раньше.
+        const cache = _loadCache();
+        if (cache) {
+          _releases = (cache.releases || []).filter(r => pre || !r.prerelease);
+          _latest = cache.latest || null;
+          if (!silent) _renderModal();
+        }
         return;
       }
 
@@ -94,7 +153,8 @@ window.App = window.App || {};
       _latest = res.latest;
       _info = _info || {};
       _info.version = res.current;
-      _saveCheckTimestamp(); // запомним время — следующий автостарт пропустит проверку
+      _saveCheckTimestamp();
+      _saveCache({ releases: _releases, latest: _latest, current: res.current });
 
       if (res.has_update) {
         _showBanner(res.latest, res.current);
@@ -107,6 +167,7 @@ window.App = window.App || {};
         }
       }
     } catch (e) {
+      _saveCheckTimestamp();
       if (!silent) _status(String(e), "error");
     }
   }
@@ -162,11 +223,25 @@ window.App = window.App || {};
     document.getElementById("upd-current").textContent = _info.version || "—";
     document.getElementById("upd-repo").textContent = _info.repo || "—";
 
+    // Подложим кеш, чтобы не открывать модалку с пустым списком
+    if (!_releases.length) {
+      const cache = _loadCache();
+      if (cache) {
+        const pre = document.getElementById("upd-prerelease")?.checked || false;
+        _releases = (cache.releases || []).filter(r => pre || !r.prerelease);
+        _latest = cache.latest || null;
+      }
+    }
+
     await _loadBackups();
     _renderModal();
     _renderLastCheckTime();
     _modal.show();
-    if (!_releases.length) _check(false);
+    // Живой запрос — только если и кеш пуст, и кулдаун не активен.
+    if (!_releases.length && !_isCheckCoolingDown()) _check(false);
+    else if (_isCheckCoolingDown()) {
+      _status(`Кеш от прошлой проверки. Следующий запрос через ${_fmtLeft(_cooldownRemainingMs())}`, "info");
+    }
   };
 
   async function _loadBackups() {

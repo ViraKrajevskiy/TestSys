@@ -2,11 +2,17 @@
 
 (function () {
   let hoverTimer = null;
+  let currentAnchor = null;
 
   App.scheduleHoverPreview = function (anchorEl, html, delay = 350) {
     App.clearHoverPreview();
+    currentAnchor = anchorEl;
     hoverTimer = setTimeout(() => {
-      const rect = anchorEl.getBoundingClientRect();
+      if (!currentAnchor || !currentAnchor.isConnected) {
+        currentAnchor = null;
+        return;
+      }
+      const rect = currentAnchor.getBoundingClientRect();
       App.showHoverPreviewAt(rect.left, rect.bottom + 6, html);
     }, delay);
   };
@@ -16,9 +22,23 @@
       clearTimeout(hoverTimer);
       hoverTimer = null;
     }
+    currentAnchor = null;
     const el = document.getElementById("hover-preview");
     if (el) el.style.display = "none";
   };
+
+  // Страховка от «залипшего» превью: если якорь исчез из DOM
+  // (частый случай — renderAll во время hover) или курсор ушёл
+  // с якоря без mouseleave — прячем.
+  document.addEventListener("mousemove", (e) => {
+    if (!currentAnchor) return;
+    if (!currentAnchor.isConnected) { App.clearHoverPreview(); return; }
+    const r = currentAnchor.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right ||
+        e.clientY < r.top  || e.clientY > r.bottom) {
+      App.clearHoverPreview();
+    }
+  }, true);
 
   App.showHoverPreviewAt = function (x, y, html) {
     const el = document.getElementById("hover-preview");
