@@ -40,6 +40,22 @@
     }
   }, true);
 
+  // Клик в любом месте — сразу гасим (открытие вкладки, detach и т.п.
+  // обычно приводят к renderAll под курсором, а mousemove после клика
+  // может не прийти).
+  document.addEventListener("mousedown", App.clearHoverPreview, true);
+
+  // Окно потеряло фокус (открылось detached, alt-tab, клик по другому окну) —
+  // mousemove сюда больше не придёт, поэтому чистим руками.
+  window.addEventListener("blur", App.clearHoverPreview);
+
+  // Курсор вышел за пределы документа.
+  document.addEventListener("mouseleave", App.clearHoverPreview);
+
+  // Скролл/ресайз — якорь мог уехать, позиция превью станет неактуальной.
+  window.addEventListener("scroll", App.clearHoverPreview, true);
+  window.addEventListener("resize", App.clearHoverPreview);
+
   App.showHoverPreviewAt = function (x, y, html) {
     const el = document.getElementById("hover-preview");
     if (!el) return;
