@@ -106,9 +106,29 @@ window.App = window.App || {};
 
     let html = "";
     Object.entries(byColFolder).forEach(([col, folders]) => {
-      html += `<div class="par-col"><div class="par-col-name"><i class="bi bi-collection"></i> ${App.escapeHtml(col)}</div>`;
+      // Чекбокс на коллекцию — переключает все запросы во всех её папках.
+      const colKeys = [];
+      Object.values(folders).forEach(reqs => reqs.forEach(r => colKeys.push(r.key)));
+      const colAll = colKeys.length && colKeys.every(k => _selected.has(k));
+      html += `<div class="par-col">
+        <label class="par-col-name">
+          <input type="checkbox" class="par-toggle par-col-check"
+                 data-scope="col" data-keys='${App.escapeAttr(JSON.stringify(colKeys))}'
+                 ${colAll ? "checked" : ""}>
+          <i class="bi bi-collection"></i> ${App.escapeHtml(col)}
+          <span class="par-count" style="color:var(--text-dim);font-size:11px;">(${colKeys.length})</span>
+        </label>`;
       Object.entries(folders).forEach(([folder, reqs]) => {
-        html += `<div class="par-folder"><div class="par-folder-name"><i class="bi bi-folder2"></i> ${App.escapeHtml(folder)}</div>`;
+        const folderKeys = reqs.map(r => r.key);
+        const folderAll = folderKeys.length && folderKeys.every(k => _selected.has(k));
+        html += `<div class="par-folder">
+          <label class="par-folder-name">
+            <input type="checkbox" class="par-toggle par-folder-check"
+                   data-scope="folder" data-keys='${App.escapeAttr(JSON.stringify(folderKeys))}'
+                   ${folderAll ? "checked" : ""}>
+            <i class="bi bi-folder2"></i> ${App.escapeHtml(folder)}
+            <span class="par-count" style="color:var(--text-dim);font-size:11px;">(${folderKeys.length})</span>
+          </label>`;
         reqs.forEach(r => {
           const checked = _selected.has(r.key) ? "checked" : "";
           const colorVar = (App.METHOD_COLOR_VAR && App.METHOD_COLOR_VAR[r.method]) || "--text-dim";
@@ -126,24 +146,38 @@ window.App = window.App || {};
     });
     box.innerHTML = html;
 
-    box.querySelectorAll("input[type='checkbox']").forEach(cb => {
+    // Индивидуальные чекбоксы
+    box.querySelectorAll("input[type='checkbox']:not(.par-toggle)").forEach(cb => {
       cb.addEventListener("change", () => {
         if (cb.checked) _selected.add(cb.dataset.key);
         else _selected.delete(cb.dataset.key);
-        _updateSelectionInfo();
+        _renderRequestTree();   // перерисуем — тумблеры папок/коллекций отразят новое состояние
       });
     });
+
+    // Групповые тумблеры (папка/коллекция)
+    box.querySelectorAll(".par-toggle").forEach(cb => {
+      cb.addEventListener("change", (e) => {
+        e.stopPropagation();
+        let keys;
+        try { keys = JSON.parse(cb.dataset.keys || "[]"); } catch { keys = []; }
+        if (cb.checked) keys.forEach(k => _selected.add(k));
+        else            keys.forEach(k => _selected.delete(k));
+        _renderRequestTree();
+      });
+    });
+
     _updateSelectionInfo();
   }
 
   function _selectAll(on) {
+    // Собираем ключи из индивидуальных чекбоксов (не тумблеров папок/коллекций).
     const box = document.getElementById("par-requests");
-    box.querySelectorAll("input[type='checkbox']").forEach(cb => {
-      cb.checked = on;
+    box.querySelectorAll("input[type='checkbox']:not(.par-toggle)").forEach(cb => {
       if (on) _selected.add(cb.dataset.key);
       else    _selected.delete(cb.dataset.key);
     });
-    _updateSelectionInfo();
+    _renderRequestTree();
   }
 
   function _updateSelectionInfo() {
@@ -196,6 +230,7 @@ window.App = window.App || {};
       await Promise.all(batch);
       _updateProgress(round, iterations);
       _renderResults();
+      _renderTimeline();
       if (delayMs > 0 && round < iterations && !_state.aborted) {
         await new Promise(r => setTimeout(r, delayMs));
       }
@@ -205,6 +240,7 @@ window.App = window.App || {};
     _state.finishedAt = performance.now();
     _setPhase(_state.aborted ? "aborted" : "done");
     _renderResults();
+    _renderTimeline();
     _renderAnalysis();
   }
 
@@ -212,8 +248,19 @@ window.App = window.App || {};
 
   async function _runOne(reqInfo, roundIdx) {
     const started = performance.now();
+    // startedAtRel — сдвиг от начала всей сессии. Нужен таймлайну, чтобы
+    // увидеть, что запросы РЕАЛЬНО начались одновременно (Promise.all не
+    // гарантирует, а pywebview-bridge и вовсе сериализует).
+    const startedAtRel = _state ? started - _state.startedAt : 0;
     const tab = reqInfo.entry;
-    const resolve = App.resolveAll || App.resolveVariables || ((s) => s);
+    const iter = roundIdx + 1;
+    // Уникальность на итерацию: {{$iter}} / {{$parIter}} → номер круга
+    // (1-based). Без этого одинаковые POST'ы всегда выглядят как «дубли»,
+    // и анализ бесполезен для writes.
+    const preSubst = (s) => (s == null ? s : String(s).replace(/\{\{\$(iter|parIter)\}\}/g, String(iter)));
+    const resolveOne = App.resolveAll || App.resolveVariables || ((s) => s);
+    const resolve = (s) => resolveOne(preSubst(s));
+
     const url = resolve(tab.url || "").trim();
     const body = tab.body ? resolve(tab.body) : "";
     const headers = { "Content-Type": "application/json" };
@@ -224,13 +271,18 @@ window.App = window.App || {};
         tab.method, url, headers, {}, body || null,
       );
     } catch (e) {
-      return { ok: false, error: String(e), ms: performance.now() - started, status: 0, body: "" };
+      return {
+        ok: false, error: String(e),
+        ms: performance.now() - started, startedAtRel,
+        status: 0, body: "",
+      };
     }
     const ms = resp.elapsed_ms || Math.round(performance.now() - started);
     return {
       ok: resp.ok && resp.status_code < 400,
       status: resp.status_code || 0,
-      ms, body: (resp.text || "").slice(0, 512),   // храним обрезанный ответ для анализа
+      ms, startedAtRel,
+      body: (resp.text || "").slice(0, 512),   // храним обрезанный ответ для анализа
       error: resp.ok ? "" : (resp.error || "").split("\n")[0],
     };
   }
@@ -286,6 +338,107 @@ window.App = window.App || {};
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
+  }
+
+  /**
+   * Таймлайн реальных стартов: полоски [startedAtRel .. startedAtRel+ms].
+   * Показывает, что запросы РЕАЛЬНО одновременны — а не только вызваны через
+   * Promise.all. Если полоски начинаются со сдвигом — pywebview-bridge
+   * сериализует, и «race» тут не воспроизвести.
+   *
+   * Ограничение: рисуем максимум LAST_ROUNDS раундов, иначе на 500 итераций
+   * получим ~10000 полос — тормозной SVG. Свежие круги обычно интереснее.
+   */
+  const LAST_ROUNDS = 30;
+  function _renderTimeline() {
+    const wrap = document.getElementById("par-timeline-wrap");
+    const svg  = document.getElementById("par-timeline");
+    if (!wrap || !svg || !_state) return;
+
+    // Собираем плоский список: {reqIdx, roundIdx, startedAtRel, ms, ok, status}
+    const chosen = _state.chosen;
+    const groups = _state.results;
+    // Первый пасс — понять сколько раундов сейчас есть.
+    const roundsTotal = Math.min(
+      ...groups.map(g => g.results.length),
+      _state.config.iterations,
+    );
+    if (!isFinite(roundsTotal) || roundsTotal <= 0) {
+      wrap.style.display = "none";
+      return;
+    }
+    wrap.style.display = "";
+
+    const startRound = Math.max(0, roundsTotal - LAST_ROUNDS);
+    const rows = [];
+    for (let r = startRound; r < roundsTotal; r++) {
+      for (let i = 0; i < groups.length; i++) {
+        const g = groups[i];
+        const rec = g.results[r];
+        if (!rec) continue;
+        rows.push({
+          reqIdx: i, roundIdx: r,
+          startedAtRel: rec.startedAtRel || 0,
+          ms: rec.ms || 0,
+          ok: rec.ok, status: rec.status,
+        });
+      }
+    }
+    if (!rows.length) { wrap.style.display = "none"; return; }
+
+    const W  = svg.clientWidth || 700;
+    const padL = 40, padR = 8, padT = 6, padB = 16;
+    const roundH = 10;   // высота одного раунда (одна полоса на запрос впритык)
+    const gap = 2;
+    const totalRounds = roundsTotal - startRound;
+    const H = padT + padB + totalRounds * (roundH + gap);
+    svg.setAttribute("height", H);
+
+    // Ось X — от min start до max end
+    const minT = Math.min(...rows.map(r => r.startedAtRel));
+    const maxT = Math.max(...rows.map(r => r.startedAtRel + r.ms));
+    const range = Math.max(1, maxT - minT);
+    const chartW = W - padL - padR;
+    const xOf = (t) => padL + ((t - minT) / range) * chartW;
+
+    // Цвета по запросу — стабильно per-reqIdx
+    const palette = ["#58a6ff", "#22c55e", "#ffc107", "#a78bfa", "#ec4899", "#14b8a6", "#f97316", "#eab308"];
+    const colorOf = (i) => palette[i % palette.length];
+
+    let bars = "";
+    let labels = "";
+    for (let r = startRound; r < roundsTotal; r++) {
+      const y = padT + (r - startRound) * (roundH + gap);
+      labels += `<text x="${padL - 4}" y="${y + roundH - 1}" text-anchor="end"
+                       fill="var(--text-dim)" font-size="8">#${r + 1}</text>`;
+      // Разделитель раунда
+      labels += `<line x1="${padL}" y1="${y + roundH + 1}" x2="${W - padR}" y2="${y + roundH + 1}"
+                       stroke="var(--border-color)" stroke-dasharray="2,3" opacity=".4"/>`;
+    }
+    rows.forEach(rec => {
+      const x1 = xOf(rec.startedAtRel);
+      const x2 = xOf(rec.startedAtRel + Math.max(rec.ms, 1));
+      const y  = padT + (rec.roundIdx - startRound) * (roundH + gap);
+      const w  = Math.max(1, x2 - x1);
+      const fill = rec.ok ? colorOf(rec.reqIdx) : "#dc3545";
+      const opacity = rec.ok ? 0.9 : 1.0;
+      const name = chosen[rec.reqIdx]?.name || "?";
+      const title = `#${rec.roundIdx + 1} · ${name} · start ${Math.round(rec.startedAtRel - minT)}ms · ${rec.ms}ms · ${rec.status || "ERR"}`;
+      bars += `<rect x="${x1.toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="${roundH}"
+                     fill="${fill}" opacity="${opacity}" rx="2"><title>${_esc(title)}</title></rect>`;
+    });
+
+    // Легенда: цвета по запросам (только первые 8)
+    let legend = "";
+    chosen.slice(0, 8).forEach((c, i) => {
+      const x = padL + i * 130;
+      legend += `<rect x="${x}" y="${H - padB + 4}" width="10" height="8" fill="${colorOf(i)}" rx="2"/>
+                 <text x="${x + 14}" y="${H - padB + 11}" font-size="9" fill="var(--text-dim)">
+                   ${_esc(String(c.name).slice(0, 14))}
+                 </text>`;
+    });
+
+    svg.innerHTML = `${labels}${bars}${legend}`;
   }
 
   /** Дополнительный анализ на race conditions после завершения. */
@@ -402,11 +555,12 @@ window.App = window.App || {};
       const s = String(v ?? "");
       return /["\n;,]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
-    const rows = [["Request", "Method", "Round", "OK", "Status", "Time_ms", "Error"]];
+    const rows = [["Request", "Method", "Round", "OK", "Status", "StartedAt_ms", "Time_ms", "Error"]];
     _state.results.forEach(g => {
       g.results.forEach(r => rows.push([
         g.req.name, g.req.method, r.roundIdx,
-        r.ok ? "1" : "0", r.status, r.ms, r.error || "",
+        r.ok ? "1" : "0", r.status,
+        Math.round(r.startedAtRel || 0), r.ms, r.error || "",
       ]));
     });
     const csv = rows.map(r => r.map(esc).join(SEP)).join("\r\n");
@@ -444,6 +598,9 @@ window.App = window.App || {};
           <div class="modal-body">
             <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;" data-i18n="parHint">
               Одновременно запускаем несколько разных запросов, чтобы найти race conditions: дедлоки, дубли записей, потерянные обновления.
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);margin-bottom:10px;" data-i18n="parIterHint">
+              Внутри URL и Body можно писать <code>{{$iter}}</code> — на каждой итерации подставляется её номер (1, 2, 3…). Полезно, чтобы POST'ы слали разные данные.
             </div>
 
             <div class="row g-2 mb-3">
@@ -483,6 +640,13 @@ window.App = window.App || {};
             </div>
 
             <div id="par-results" class="mt-3"></div>
+            <div id="par-timeline-wrap" class="mt-3" style="display:none;">
+              <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;"
+                   data-i18n="parTimelineTitle">
+                Таймлайн (когда запрос реально стартовал и сколько шёл)
+              </div>
+              <svg id="par-timeline" width="100%" height="120"></svg>
+            </div>
             <div id="par-analysis" class="mt-3"></div>
           </div>
           <div class="modal-footer">

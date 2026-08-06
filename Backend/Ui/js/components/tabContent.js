@@ -40,6 +40,7 @@ window.App = window.App || {};
         <li class="nav-item"><button class="nav-link ${sub("params")}" data-sub="params">${App.t("params")}</button></li>
         <li class="nav-item"><button class="nav-link ${sub("headers")}" data-sub="headers">${App.t("headers")}</button></li>
         ${hasBodyMethod ? '<li class="nav-item"><button class="nav-link ' + sub("body") + '" data-sub="body">' + App.t("body") + '</button></li>' : ""}
+        ${hasBodyMethod ? '<li class="nav-item"><button class="nav-link ' + sub("files") + '" data-sub="files">' + App.t("files") + ((tab.files && tab.files.length) ? ' <span class="sub-dot">●</span>' : "") + '</button></li>' : ""}
         <li class="nav-item"><button class="nav-link ${sub("pre")}" data-sub="pre">
           ${App.t("preRequest")}${tab.preScript ? ' <span class="sub-dot">●</span>' : ""}
         </button></li>
@@ -146,7 +147,7 @@ window.App = window.App || {};
       });
     });
 
-    if (!hasBodyMethod && tab.activeSubTab === "body") {
+    if (!hasBodyMethod && (tab.activeSubTab === "body" || tab.activeSubTab === "files")) {
       tab.activeSubTab = "params";
     }
 
@@ -250,6 +251,11 @@ window.App = window.App || {};
       return;
     }
 
+    if (tab.activeSubTab === "files") {
+      _renderFilesTab(container, tab);
+      return;
+    }
+
     // ---- Таблица key-value ----
     const listKey = tab.activeSubTab;
     const rows = tab[listKey];
@@ -283,6 +289,8 @@ window.App = window.App || {};
       const node = template.content.firstElementChild.cloneNode(true);
       node.classList.add("kv-row-grid");
       if (!row.enabled) node.classList.add("kv-disabled");
+      // Последняя пустая строка — «черновая»: серее, без hover-подсветки.
+      if (isLast && !_rowFilled(row)) node.classList.add("kv-row-empty");
 
       const keyInput = node.querySelector(".kv-key");
       const valInput = node.querySelector(".kv-value");
@@ -629,6 +637,167 @@ window.App = window.App || {};
     return !!(r && ((r.key || "").trim() || (r.value || "").trim()));
   }
 
+  // -------- multipart: файлы + текстовые поля формы --------
+  function _fmtBytes(n) {
+    if (n == null) return "";
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+    return (n / (1024 * 1024)).toFixed(1) + " MB";
+  }
+
+  function _renderFilesTab(container, tab) {
+    if (!Array.isArray(tab.files)) tab.files = [];
+    if (!Array.isArray(tab.formFields)) tab.formFields = [];
+
+    // Верхняя карточка: инфа + кнопка добавить
+    // Список файлов — компактные карточки с иконкой, полем "имя поля",
+    // именем/размером файла и кнопкой удаления.
+    const filesListHtml = tab.files.length
+      ? tab.files.map((f, i) => `
+          <div class="fu-row" data-idx="${i}">
+            <i class="bi bi-file-earmark fu-icon"></i>
+            <input type="text" class="form-control form-control-sm fu-field"
+                   placeholder="${App.t("fieldName")}"
+                   value="${App.escapeAttr(f.field || "")}">
+            <div class="fu-info" title="${App.escapeAttr(f.path || "")}">
+              <div class="fu-name">${App.escapeHtml(f.name || "")}</div>
+              <div class="fu-meta">${_fmtBytes(f.size)}</div>
+            </div>
+            <input type="text" class="form-control form-control-sm fu-ctype"
+                   placeholder="${App.t("contentType")} (${App.t("contentTypeAuto")})"
+                   title="${App.t("contentType")}"
+                   value="${App.escapeAttr(f.content_type || "")}">
+            <button class="fu-remove" title="${App.t("removeFile")}">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>`).join("")
+      : `<div class="fu-empty">
+           <i class="bi bi-cloud-arrow-up"></i>
+           <span>${App.t("noFilesYet")}</span>
+         </div>`;
+
+    // Текстовые поля формы: kv-таблица, как params/headers.
+    const ff = tab.formFields;
+    if (ff.length === 0 || _rowFilled(ff[ff.length - 1])) {
+      ff.push({ key: "", value: "", enabled: true });
+    }
+    const fieldsHtml = ff.map((r, i) => {
+      const isLast = i === ff.length - 1;
+      const empty = isLast && !_rowFilled(r);
+      const disabled = r.enabled === false ? "kv-disabled" : "";
+      const emptyCls = empty ? "kv-row-empty" : "";
+      return `
+        <div class="kv-row kv-row-grid ${disabled} ${emptyCls}" data-idx="${i}">
+          <input type="checkbox" class="kv-enabled" ${r.enabled !== false ? "checked" : ""}
+                 title="${App.t("enableRow")}" ${empty ? 'style="visibility:hidden"' : ""}>
+          <input type="text" class="kv-key" placeholder="${App.t("key")}"
+                 value="${App.escapeAttr(r.key || "")}">
+          <input type="text" class="kv-value" placeholder="${App.t("value")}"
+                 value="${App.escapeAttr(r.value || "")}">
+          <button class="kv-remove" title="${App.t("removeFile")}"
+                  ${empty ? 'style="visibility:hidden"' : ""}>
+            <i class="bi bi-trash3"></i>
+          </button>
+        </div>`;
+    }).join("");
+
+    container.innerHTML = `
+      <div class="fu-wrap">
+        <div class="fu-hint">
+          <i class="bi bi-info-circle"></i>
+          <span>${App.t("filesInfo")}</span>
+          <button class="btn btn-sm btn-primary fu-add-btn" id="files-add-btn">
+            <i class="bi bi-paperclip"></i> ${App.t("addFile")}
+          </button>
+        </div>
+        <div class="fu-list">${filesListHtml}</div>
+        <div class="fu-section-title">${App.t("textFields")}</div>
+        <div class="kv-table">
+          <div class="kv-head">
+            <span class="kv-col-check"></span>
+            <span class="kv-col-key">${App.t("key")}</span>
+            <span class="kv-col-val">${App.t("value")}</span>
+            <span class="kv-col-act"></span>
+          </div>
+          <div id="ff-rows">${fieldsHtml}</div>
+        </div>
+      </div>`;
+
+    document.getElementById("files-add-btn").addEventListener("click", async () => {
+      const api = window.pywebview && window.pywebview.api;
+      if (!api || !api.pick_files) {
+        App.showAlert && App.showAlert(App.t("pickFilesFailed"));
+        return;
+      }
+      let res;
+      try {
+        res = await api.pick_files(true);
+      } catch (e) {
+        App.showAlert && App.showAlert(App.t("pickFilesFailed") + ": " + e);
+        return;
+      }
+      if (!res || res.cancelled) return;
+      if (!res.ok) {
+        App.showAlert && App.showAlert(res.error || App.t("pickFilesFailed"));
+        return;
+      }
+      (res.files || []).forEach(f => {
+        const n = tab.files.length + 1;
+        tab.files.push({
+          field: n === 1 ? "file" : "file" + n,
+          path: f.path, name: f.name, size: f.size,
+        });
+      });
+      App.renderTabContent();
+    });
+
+    container.querySelectorAll(".fu-row").forEach((row) => {
+      const idx = Number(row.dataset.idx);
+      row.querySelector(".fu-field").addEventListener("input", (e) => {
+        tab.files[idx].field = e.target.value;
+      });
+      row.querySelector(".fu-ctype").addEventListener("input", (e) => {
+        tab.files[idx].content_type = e.target.value.trim();
+      });
+      row.querySelector(".fu-remove").addEventListener("click", () => {
+        tab.files.splice(idx, 1);
+        App.renderTabContent();
+      });
+    });
+
+    container.querySelectorAll("#ff-rows .kv-row").forEach((row) => {
+      const idx = Number(row.dataset.idx);
+      // При заполнении последней строки перерисовываем sub-tab, чтобы снизу
+      // появилась новая пустая. Возвращаем курсор туда же — иначе фокус
+      // теряется на каждом первом символе.
+      const rerenderKeepFocus = (which, e) => {
+        if (idx !== tab.formFields.length - 1) return;
+        if (!_rowFilled(tab.formFields[idx])) return;
+        const pos = e.target.selectionStart;
+        App.renderSubTabContent(tab);
+        const again = document.querySelectorAll("#ff-rows .kv-row")[idx];
+        const inp = again && again.querySelector(which === "key" ? ".kv-key" : ".kv-value");
+        if (inp) { inp.focus(); inp.setSelectionRange(pos, pos); }
+      };
+      row.querySelector(".kv-enabled").addEventListener("change", (e) => {
+        tab.formFields[idx].enabled = e.target.checked;
+        row.classList.toggle("kv-disabled", !e.target.checked);
+      });
+      row.querySelector(".kv-key").addEventListener("input", (e) => {
+        tab.formFields[idx].key = e.target.value;
+        rerenderKeepFocus("key", e);
+      });
+      row.querySelector(".kv-value").addEventListener("input", (e) => {
+        tab.formFields[idx].value = e.target.value;
+        rerenderKeepFocus("value", e);
+      });
+      row.querySelector(".kv-remove").addEventListener("click", () => {
+        tab.formFields.splice(idx, 1);
+        App.renderSubTabContent(tab);
+      });
+    });
+  }
+
   /** Только включённые и непустые строки идут в запрос */
   App.activeRows = function (rows) {
     return (rows || []).filter(r => r.enabled !== false && (r.key || "").trim());
@@ -706,4 +875,57 @@ window.App = window.App || {};
       bodyEl.appendChild(pre);
     }
   };
+
+  // Drag & drop файлов из ОС. Пути приходят из pywebview
+  // (main.py → window.evaluate_js), потому что в JS у File.path нет
+  // (браузерная безопасность). Здесь только UX и роутинг:
+  // добавляем в активную вкладку, если открыта под-вкладка Files.
+  window.addEventListener("pywebview:files-dropped", (e) => {
+    const infos = e.detail || [];
+    if (!infos.length) return;
+    const tab = App.getActiveTab && App.getActiveTab();
+    if (!tab) return;
+    // Multipart имеет смысл только для методов с телом. Иначе просто
+    // подсказываем пользователю переключить метод.
+    if (!["POST", "PUT", "PATCH"].includes(tab.method)) {
+      App.showAlert && App.showAlert("Drag&drop файлов работает для POST/PUT/PATCH");
+      return;
+    }
+    if (!Array.isArray(tab.files)) tab.files = [];
+    infos.forEach(f => {
+      const n = tab.files.length + 1;
+      tab.files.push({
+        field: n === 1 ? "file" : "file" + n,
+        path: f.path, name: f.name, size: f.size,
+      });
+    });
+    // Открыть под-вкладку Files, чтобы пользователь сразу увидел результат.
+    tab.activeSubTab = "files";
+    App.renderTabContent();
+  });
+
+  // Подсветка drop-зоны, пока пользователь тащит файл над окном.
+  // Сам drop-эвент не даёт нам путей — работает только для визуала.
+  let _dragCounter = 0;
+  window.addEventListener("dragenter", (e) => {
+    if (!e.dataTransfer || !Array.from(e.dataTransfer.types || []).includes("Files")) return;
+    _dragCounter++;
+    document.body.classList.add("fu-dragging");
+  });
+  window.addEventListener("dragleave", () => {
+    _dragCounter = Math.max(0, _dragCounter - 1);
+    if (_dragCounter === 0) document.body.classList.remove("fu-dragging");
+  });
+  window.addEventListener("dragover", (e) => {
+    if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) {
+      e.preventDefault();
+    }
+  });
+  window.addEventListener("drop", (e) => {
+    if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) {
+      e.preventDefault();
+    }
+    _dragCounter = 0;
+    document.body.classList.remove("fu-dragging");
+  });
 })();

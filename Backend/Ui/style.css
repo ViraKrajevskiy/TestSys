@@ -335,15 +335,23 @@ body {
 .par-tree { font-size: 12px; }
 .par-col { margin-bottom: 6px; }
 .par-col-name {
+  display: flex; align-items: center; gap: 6px;
   font-weight: 700; color: var(--accent); font-size: 11px;
   text-transform: uppercase; letter-spacing: .04em;
-  padding: 2px 4px;
+  padding: 3px 4px; cursor: pointer;
+  border-radius: 3px;
 }
+.par-col-name:hover { background: var(--bg-input); }
 .par-folder { margin-left: 10px; margin-top: 4px; }
 .par-folder-name {
+  display: flex; align-items: center; gap: 6px;
   font-weight: 600; color: var(--text-dim); font-size: 11px;
-  padding: 1px 4px;
+  padding: 2px 4px; cursor: pointer;
+  border-radius: 3px;
 }
+.par-folder-name:hover { background: var(--bg-input); color: var(--text-main); }
+.par-toggle { cursor: pointer; margin: 0; accent-color: var(--accent); }
+.par-count { margin-left: auto; }
 .par-req {
   display: flex; align-items: center; gap: 6px;
   padding: 3px 6px 3px 22px;
@@ -852,6 +860,23 @@ body {
 }
 .kv-row.kv-row-grid:last-child { border-bottom: none; }
 .kv-row.kv-row-grid:hover { background: var(--bg-input); }
+
+/* Последняя пустая строка — «черновая»: приглушённая, без hover и «зебры».
+   Как только пользователь начнёт печатать, класс уходит и строка ведёт
+   себя как обычная. */
+.kv-row.kv-row-grid.kv-row-empty { background: transparent !important; }
+.kv-row.kv-row-grid.kv-row-empty:hover { background: transparent !important; }
+.kv-row.kv-row-grid.kv-row-empty .kv-key::placeholder,
+.kv-row.kv-row-grid.kv-row-empty .kv-value::placeholder {
+  color: var(--text-dim);
+  opacity: 0.45;
+  font-style: italic;
+}
+/* Не подсвечиваем разделитель между key/value — он лишний,
+   пока строка пустая: визуально режет «пробное поле» пополам. */
+.kv-row.kv-row-grid.kv-row-empty .kv-key {
+  border-right-color: transparent !important;
+}
 
 .kv-row.kv-row-grid .kv-enabled {
   justify-self: center;
@@ -2266,3 +2291,99 @@ a.upd-action.upd-link:hover { border-color: var(--accent); color: var(--accent);
 
 /* Users panel */
 .users-panel h5 { color: var(--text-main); }
+
+/* ============ Files (multipart) tab ============ */
+.fu-wrap { display: flex; flex-direction: column; gap: 10px; }
+
+.fu-hint {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.fu-hint > i { color: var(--accent); flex-shrink: 0; }
+.fu-hint > span { flex: 1; }
+.fu-add-btn { flex-shrink: 0; white-space: nowrap; }
+
+.fu-list { display: flex; flex-direction: column; gap: 6px; }
+
+.fu-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px;
+  padding: 24px 12px;
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+.fu-empty > i { font-size: 24px; color: var(--text-dim); }
+
+.fu-row {
+  display: grid;
+  grid-template-columns: 20px 140px 1fr 160px 28px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  transition: border-color .12s;
+}
+.fu-row:hover { border-color: var(--accent); }
+.fu-icon { color: var(--accent); font-size: 16px; }
+.fu-field, .fu-ctype {
+  background: var(--bg-app) !important;
+  border: 1px solid var(--border-color) !important;
+  color: var(--text-main) !important;
+  font-size: 12.5px;
+  padding: 5px 8px;
+}
+.fu-ctype {
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 11.5px;
+}
+.fu-field:focus, .fu-ctype:focus {
+  border-color: var(--accent) !important;
+  box-shadow: none !important;
+  outline: none;
+}
+.fu-info { min-width: 0; overflow: hidden; }
+.fu-name {
+  color: var(--text-main); font-size: 12.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.fu-meta { color: var(--text-dim); font-size: 11px; }
+.fu-remove {
+  border: none; background: transparent;
+  color: var(--text-dim); cursor: pointer;
+  padding: 4px; border-radius: 4px;
+  transition: color .12s, background .12s;
+}
+.fu-remove:hover { color: #dc3545; background: var(--bg-app); }
+
+.fu-section-title {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+/* Drag & drop оверлей на всё окно, пока пользователь тащит файл */
+body.fu-dragging::after {
+  content: "";
+  position: fixed; inset: 0;
+  background: rgba(var(--accent-rgb, 88, 166, 255), 0.08);
+  border: 3px dashed var(--accent);
+  border-radius: 8px;
+  pointer-events: none;
+  z-index: 9999;
+}
+body.fu-dragging .fu-list,
+body.fu-dragging .fu-empty {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb, 88, 166, 255), 0.06);
+}

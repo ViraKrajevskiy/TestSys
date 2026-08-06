@@ -194,16 +194,31 @@ window.App = window.App || {};
     }
 
     const parts = [`curl -X ${method} ${q}${esc(url)}${q}`];
+    const hasFiles = Array.isArray(tab.files) && tab.files.length > 0;
     const headers = pick(tab.headers);
     headers.forEach(h => {
+      // При multipart curl сам поставит Content-Type c boundary — не дублируем
+      if (hasFiles && (h.key || "").toLowerCase() === "content-type") return;
       parts.push(`-H ${q}${esc(resolve(h.key) + ": " + resolve(h.value))}${q}`);
     });
     if (tab.userAgent) {
       parts.push(`-A ${q}${esc(resolve(tab.userAgent))}${q}`);
     }
-    const body = tab.body ? resolve(tab.body) : "";
-    if (body && !["GET", "HEAD"].includes(method)) {
-      parts.push(`--data-raw ${q}${esc(body)}${q}`);
+    if (hasFiles) {
+      tab.files.forEach(f => {
+        if (!f || !f.path || !(f.field || "").trim()) return;
+        parts.push(`-F ${q}${esc(resolve(f.field).trim() + "=@" + f.path)}${q}`);
+      });
+      (tab.formFields || [])
+        .filter(f => (f.enabled !== false) && (f.key || "").trim())
+        .forEach(f => {
+          parts.push(`-F ${q}${esc(resolve(f.key).trim() + "=" + resolve(f.value || ""))}${q}`);
+        });
+    } else {
+      const body = tab.body ? resolve(tab.body) : "";
+      if (body && !["GET", "HEAD"].includes(method)) {
+        parts.push(`--data-raw ${q}${esc(body)}${q}`);
+      }
     }
 
     const sep = platform === "cmd" ? " ^\n  " : " \\\n  ";

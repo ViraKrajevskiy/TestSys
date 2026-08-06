@@ -151,7 +151,7 @@ window.App = window.App || {};
     // Inject modal HTML
     const modalHtml = `
     <div class="modal fade" id="settings-modal" tabindex="-1">
-      <div class="modal-dialog modal-lg">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content theme-modal-content">
           <div class="modal-header">
             <h5 class="modal-title"><i class="bi bi-gear me-2"></i><span data-i18n="settings">Настройки проекта</span></h5>

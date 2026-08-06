@@ -21,6 +21,10 @@ window.App = window.App || {};
       lastTests: null,     // результаты последнего запуска pm.test
       crudEntity: null,
       crudAction: null,
+      // Multipart-загрузка: если files непустой, запрос уходит как
+      // multipart/form-data (JSON body игнорируется).
+      files: [],           // [{field, path, name, size}]
+      formFields: [],      // [{key, value, enabled}] — текстовые поля формы
     };
     Object.assign(tab, overrides || {});
     return tab;

@@ -53,9 +53,13 @@ App.sendRequest = async function (tabId) {
     return;
   }
 
+  // Если приложены файлы — уходит multipart, JSON body игнорируется на бэке,
+  // поэтому и валидировать его нет смысла.
+  const hasFiles = Array.isArray(tab.files) && tab.files.length > 0;
+
   // Проверяем JSON уже ПОСЛЕ подстановки — до неё тело может быть
   // невалидным из-за плейсхолдеров, и это нормально.
-  if (["POST", "PUT", "PATCH"].includes(tab.method) && finalBody.trim()) {
+  if (!hasFiles && ["POST", "PUT", "PATCH"].includes(tab.method) && finalBody.trim()) {
     const parsed = App.tryParseJson(finalBody);
     if (parsed === null) {
       tab.response = { ok: false, error: App.t ? App.t("errInvalidJsonBody") : "Invalid JSON in request body" };
@@ -79,14 +83,42 @@ App.sendRequest = async function (tabId) {
     headersObj["User-Agent"] = resolve(tab.userAgent);
   }
 
+  // Multipart: подготавливаем список файлов (пропускаем без пути/поля) и
+  // резолвим переменные в текстовых полях формы.
+  let filesArr = null, formFieldsArr = null;
+  if (hasFiles) {
+    filesArr = tab.files
+      .filter(f => f && f.path && (f.field || "").trim())
+      .map(f => ({
+        field: resolve(f.field).trim(),
+        path: f.path,
+        filename: f.name || undefined,
+        content_type: (f.content_type || "").trim() || undefined,
+      }));
+    formFieldsArr = (tab.formFields || [])
+      .filter(f => (f.enabled !== false) && (f.key || "").trim())
+      .map(f => ({ key: resolve(f.key).trim(), value: resolve(f.value || "") }));
+  }
+
   // Сохраняем то, что реально ушло — видно в панели ответа
-  tab.lastSent = { url: finalUrl, body: finalBody, headers: headersObj, params: paramsObj };
+  tab.lastSent = {
+    url: finalUrl, body: finalBody, headers: headersObj, params: paramsObj,
+    files: filesArr, formFields: formFieldsArr,
+  };
 
   const requestStart = Date.now();
   try {
-    tab.response = await window.pywebview.api.send_request(
-      tab.method, finalUrl, headersObj, paramsObj, finalBody.trim() || null
-    );
+    // Без файлов зовём старую сигнатуру (5 аргументов) — совместимо со
+    // сборками бэка без multipart. Extra args добавляем только если реально
+    // отправляем файлы.
+    tab.response = hasFiles
+      ? await window.pywebview.api.send_request(
+          tab.method, finalUrl, headersObj, paramsObj, null,
+          filesArr, formFieldsArr,
+        )
+      : await window.pywebview.api.send_request(
+          tab.method, finalUrl, headersObj, paramsObj, finalBody.trim() || null,
+        );
     if (tab.response.ok && App.getResponseEntities(tab) && tab.crudEntity) {
       tab.responseViewMode = "table";
     }

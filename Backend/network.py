@@ -6,37 +6,74 @@ network.py — отправка HTTP-запроса и человеко-поня
 Вместо этого распознаём типовые проблемы и объясняем, что делать.
 """
 
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from urllib.parse import urlparse
 
+import os
 import re
 import ssl
 import time
 import socket
+import mimetypes
 import requests
 
 
 # Лимиты
-MAX_BODY_SIZE   = 512 * 1024        # 512 КБ — макс. размер отправляемого body
-MAX_RESPONSE    = 5 * 1024 * 1024   # 5 МБ — макс. размер ответа (обрезаем)
-REQUEST_TIMEOUT = 30                # секунд
+MAX_BODY_SIZE     = 512 * 1024          # 512 КБ — макс. размер JSON-тела
+MAX_RESPONSE      = 5 * 1024 * 1024     # 5 МБ — макс. размер ответа (обрезаем)
+MAX_FILE_SIZE     = 50 * 1024 * 1024    # 50 МБ — на один загружаемый файл
+MAX_TOTAL_UPLOAD  = 100 * 1024 * 1024   # 100 МБ — суммарно за один запрос
+REQUEST_TIMEOUT   = 30                  # секунд
 
 
-def send_http_request(method: str, url: str, headers: dict, params: dict, body: Optional[str]) -> dict:
-    """Выполняет один HTTP-запрос, возвращает dict, готовый к JSON-сериализации."""
+def send_http_request(
+    method: str,
+    url: str,
+    headers: dict,
+    params: dict,
+    body: Optional[str],
+    files: Optional[List[Dict[str, Any]]] = None,
+    form_fields: Optional[List[Dict[str, str]]] = None,
+) -> dict:
+    """Выполняет один HTTP-запрос, возвращает dict, готовый к JSON-сериализации.
+
+    Если передан непустой ``files`` — запрос уходит как multipart/form-data:
+    JSON-тело игнорируется, вместо него собираются поля из ``form_fields``
+    и файлы читаются с диска. Заголовок Content-Type снимаем, чтобы requests
+    сам поставил multipart с корректным boundary.
+    """
+    opened = []  # держим открытые файлы, чтобы закрыть их после отправки
     try:
-        if body and len(body.encode("utf-8")) > MAX_BODY_SIZE:
-            return _err(f"Тело слишком большое (>{MAX_BODY_SIZE // 1024} КБ)")
-
         clean_headers = {k: v for k, v in (headers or {}).items() if k}
         clean_params = {k: v for k, v in (params or {}).items() if k}
+
+        multipart_files, data_payload = None, None
+        if files:
+            prepared, err = _prepare_files(files, opened)
+            if err:
+                return _err(err)
+            multipart_files = prepared
+            data_payload = {}
+            for f in (form_fields or []):
+                key = (f.get("key") or "").strip()
+                if not key:
+                    continue
+                data_payload[key] = f.get("value", "")
+            # Убираем Content-Type — requests выставит multipart с boundary
+            clean_headers = {k: v for k, v in clean_headers.items()
+                             if k.lower() != "content-type"}
+        else:
+            if body and len(body.encode("utf-8")) > MAX_BODY_SIZE:
+                return _err(f"Тело слишком большое (>{MAX_BODY_SIZE // 1024} КБ)")
+            data_payload = body.encode("utf-8") if body else None
 
         start = time.time()
         resp = requests.request(
             method, url,
             params=clean_params,
             headers=clean_headers,
-            data=body.encode("utf-8") if body else None,
+            data=data_payload,
+            files=multipart_files,
             timeout=REQUEST_TIMEOUT,
             stream=True,   # чтобы контролировать размер ответа
             allow_redirects=True,
@@ -88,11 +125,54 @@ def send_http_request(method: str, url: str, headers: dict, params: dict, body: 
 
     except Exception as e:
         return _err(_short(str(e)))
+    finally:
+        for fh in opened:
+            try: fh.close()
+            except Exception: pass
 
 
 # ============================================================
 # ХЕЛПЕРЫ
 # ============================================================
+def _prepare_files(files, opened):
+    """
+    Открывает файлы для multipart. Возвращает список кортежей вида
+    (field, (filename, fileobj, content_type)) и None, либо (None, error).
+    """
+    result = []
+    total = 0
+    for i, entry in enumerate(files or []):
+        field = (entry.get("field") or "").strip()
+        path = entry.get("path") or ""
+        if not field:
+            return None, f"Файл #{i + 1}: не указано имя поля"
+        if not path:
+            return None, f"Файл #{i + 1} ({field}): не выбран файл"
+        if not os.path.isfile(path):
+            return None, f"Файл не найден: {path}"
+
+        try:
+            size = os.path.getsize(path)
+        except OSError as e:
+            return None, f"Не удалось прочитать {path}: {e}"
+
+        if size > MAX_FILE_SIZE:
+            return None, (f"Файл слишком большой: {os.path.basename(path)} "
+                          f"({size // (1024*1024)} МБ, лимит {MAX_FILE_SIZE // (1024*1024)} МБ)")
+        total += size
+        if total > MAX_TOTAL_UPLOAD:
+            return None, (f"Суммарный размер файлов больше "
+                          f"{MAX_TOTAL_UPLOAD // (1024*1024)} МБ")
+
+        filename = entry.get("filename") or os.path.basename(path)
+        ctype = entry.get("content_type") or mimetypes.guess_type(filename)[0] \
+                or "application/octet-stream"
+        fh = open(path, "rb")
+        opened.append(fh)
+        result.append((field, (filename, fh, ctype)))
+    return result, None
+
+
 def _err(message, hint=""):
     """Стандартный формат ошибки: короткое сообщение + необязательная подсказка."""
     text = message

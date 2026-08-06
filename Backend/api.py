@@ -32,6 +32,8 @@ USER_DATA_DIR = os.environ.get(
 )
 
 INDEX_HTML = os.path.join(BASE_DIR, "Ui", "index.html")
+# Иконку окна задаёт main.py через webview.start(icon=...) — она применяется
+# ко всем окнам, включая detached/randomizer/console из api.py.
 MAIN_WINDOW_TITLE = "TestSys"
 API_BASE_URL = "http://127.0.0.1:8000"
 
@@ -495,9 +497,51 @@ class Api:
             return {"success": False, "error": str(e)}
 
     # ========== HTTP REQUESTS (existing) ==========
-    def send_request(self, method, url, headers, params, body):
-        """Отправка HTTP-запроса. Вызывается из app.js."""
-        return send_http_request(method, url, headers, params, body)
+    def send_request(self, method, url, headers, params, body,
+                     files=None, form_fields=None):
+        """Отправка HTTP-запроса. Вызывается из app.js.
+
+        ``files`` — список ``{field, path, filename?}``. Если непустой,
+        запрос уходит как multipart/form-data вместе с ``form_fields``.
+        """
+        return send_http_request(method, url, headers, params, body,
+                                 files=files, form_fields=form_fields)
+
+    def pick_files(self, allow_multiple=True):
+        """Открывает нативный диалог выбора файлов для мультипарт-загрузки.
+
+        Возвращает ``{ok: true, files: [{path, name, size}, ...]}`` либо
+        ``{cancelled: true}``. Читать содержимое не нужно — network.py
+        откроет файлы сам в момент отправки.
+        """
+        try:
+            win = webview.active_window() or self._find_main_window()
+            if not win:
+                return {"ok": False, "error": "Окно не найдено"}
+
+            result = win.create_file_dialog(
+                _dialog_type("OPEN"),
+                allow_multiple=bool(allow_multiple),
+                file_types=("All files (*.*)",),
+            )
+            if not result:
+                return {"ok": False, "cancelled": True}
+
+            paths = list(result) if isinstance(result, (list, tuple)) else [result]
+            files = []
+            for p in paths:
+                try:
+                    files.append({
+                        "path": p,
+                        "name": os.path.basename(p),
+                        "size": os.path.getsize(p),
+                    })
+                except OSError as e:
+                    logger.warning(f"pick_files: skip {p}: {e}")
+            return {"ok": True, "files": files}
+        except Exception as e:
+            logger.error(f"pick_files failed: {e}")
+            return {"ok": False, "error": str(e)}
 
     # ========== TAB MANAGEMENT (existing) ==========
     def sync_detached_state(self, state_json):
@@ -1172,6 +1216,12 @@ class Api:
             if not u.lower().startswith(("http://", "https://")):
                 return {"ok": False, "error": "URL должен начинаться с http:// или https://"}
 
+            # Отрезаем hash (`#/`, `#/route`) — Swagger UI использует его для
+            # hash-роутинга, сервер игнорирует. Без этого все кандидаты
+            # окажутся одним и тем же URL с разной постфикс-«косметикой».
+            if "#" in u:
+                u = u.split("#", 1)[0]
+
             candidates = list(self._swagger_candidates(u))
 
             headers = {
@@ -1182,7 +1232,16 @@ class Api:
             }
 
             tried = []
-            for cand in candidates:
+            # Пока идём по кандидатам, можем встретить HTML Swagger-UI и
+            # вытащить из него ссылку на реальный JSON/YAML. Такие ссылки
+            # проверим сразу после текущего кандидата — и запомним, чтобы
+            # не пройти по кругу.
+            queue = list(candidates)
+            seen_urls = set(queue)
+            html_scanned = False
+
+            while queue:
+                cand = queue.pop(0)
                 try:
                     r = requests.get(cand, timeout=15, headers=headers, allow_redirects=True)
                     tried.append(f"{cand} → {r.status_code}")
@@ -1193,9 +1252,48 @@ class Api:
                     if not text or len(text) < 20:
                         continue
 
-                    # Пришёл HTML (Swagger UI) — пропускаем, нам нужен JSON/YAML
                     stripped = text.lstrip().lower()
-                    if stripped.startswith(("<!doctype", "<html")):
+                    is_html = stripped.startswith(("<!doctype", "<html")) or "<html" in stripped[:200]
+
+                    # Swagger-UI / Redoc / Scalar страница — вытаскиваем ссылку
+                    # на реальный документ и подставляем в очередь. Один раз
+                    # за весь fetch, чтобы не набрать сотню перекрёстных URL.
+                    if is_html and not html_scanned:
+                        html_scanned = True
+                        extracted = self._extract_spec_urls_from_html(text, cand)
+
+                        # Если из самого HTML ничего не выжали — идём по
+                        # внешним script src (типовой сценарий: агрегатор,
+                        # у которого весь конфиг в swagger-ui-init.js).
+                        if not extracted:
+                            for js_url in self._same_origin_scripts(text, cand)[:3]:
+                                try:
+                                    jr = requests.get(js_url, timeout=10, headers=headers, allow_redirects=True)
+                                    if jr.ok and jr.text:
+                                        found = self._extract_spec_urls_from_html(jr.text, js_url)
+                                        if found:
+                                            tried.append(f"  ↳ пробовал {js_url} → {jr.status_code}, найдено ссылок: {len(found)}")
+                                        for f in found:
+                                            if f not in extracted:
+                                                extracted.append(f)
+                                        if extracted:
+                                            break
+                                except Exception:
+                                    continue
+
+                        added = 0
+                        for eu in extracted:
+                            if eu not in seen_urls:
+                                seen_urls.add(eu)
+                                queue.insert(added, eu)
+                                added += 1
+                        tried.append(
+                            f"  ↳ HTML-документация; из неё извлечено ссылок: {added}"
+                            + (f" ({', '.join(extracted[:3])}{'…' if len(extracted) > 3 else ''})" if extracted else "")
+                        )
+                        continue
+
+                    if is_html:
                         continue
 
                     parsed = self._parse_spec_text(text)
@@ -1251,6 +1349,7 @@ class Api:
             "/api-docs", "/api-docs.json",
             "/v3/api-docs", "/v2/api-docs",
             "/swagger/v1/swagger.json",
+            "/docs-json", "/api-json",      # NestJS SwaggerModule по умолчанию
             "/?format=openapi", "/?format=json",
         )
         for suf in suffixes:
@@ -1269,6 +1368,157 @@ class Api:
                         "/schema.json", "/api-docs", "/v3/api-docs",
                         "/swagger/v1/swagger.json"):
                 yield from push(parent.rstrip("/") + suf)
+
+    def _same_origin_scripts(self, html, base_url):
+        """Ссылки <script src="...">, лежащие в том же origin — их безопасно
+        загрузить, чтобы поискать конфиг вида swagger-ui-init.js.
+        """
+        import re
+        from urllib.parse import urljoin, urlparse
+        base = urlparse(base_url)
+        out = []
+        for m in re.finditer(r'<script[^>]+src=[\'"]([^\'"]+\.js[^\'"]*)[\'"]', html, re.I):
+            src = m.group(1).strip()
+            if src.startswith(("data:", "javascript:")):
+                continue
+            abs_u = urljoin(base_url, src)
+            p = urlparse(abs_u)
+            if p.netloc == base.netloc and p.scheme == base.scheme and abs_u not in out:
+                out.append(abs_u)
+        return out
+
+    def _extract_spec_urls_from_html(self, html, base_url):
+        """
+        Пытаемся выкопать ссылку на openapi.json/yaml из HTML-страницы
+        документации. Смотрим на типовые паттерны — Swagger-UI, Redoc, Scalar,
+        Stoplight, Rapidoc — и относительные пути делаем абсолютными.
+        """
+        import re
+        from urllib.parse import urljoin
+
+        found = []
+
+        def add(u):
+            if not u:
+                return
+            u = u.strip().strip('"\'').strip()
+            if not u or u.startswith(("javascript:", "data:", "#")):
+                return
+            abs_u = urljoin(base_url, u)
+            if abs_u not in found:
+                found.append(abs_u)
+
+        # 1. SwaggerUIBundle({ url: "..." }) и JSON вида {"url": "..."} —
+        #    drf-yasg/drf-spectacular часто вшивают JSON конфига в HTML.
+        #    Ловим и obj-стиль (url: "..."), и JSON-стиль ("url": "..."),
+        #    и присваивание (var/let/const url = "...").
+        for m in re.finditer(r'["\']?\burl["\']?\s*[:=]\s*["\']([^"\']+\.(?:json|ya?ml)[^"\']*)["\']', html, re.I):
+            add(m.group(1))
+        # А также любой url, а не только *.json/*.yaml — фильтровать будем позже.
+        for m in re.finditer(r'["\']?\burl["\']?\s*[:=]\s*["\']([^"\']+)["\']', html, re.I):
+            u = m.group(1)
+            low = u.lower()
+            if any(x in low for x in ("openapi", "swagger", "schema", "api-docs", "spec")):
+                add(u)
+        for m in re.finditer(r'\bspec-?url\s*=\s*["\']([^"\']+)["\']', html, re.I):
+            add(m.group(1))
+        # <script id="..." type="application/json">{...}</script> — вытащим и
+        # разберём JSON целиком: там может лежать {"url": "...", "urls": [...]}
+        for m in re.finditer(
+            r'<script[^>]+type=[\'"]application/json[\'"][^>]*>(.*?)</script>',
+            html, re.I | re.S,
+        ):
+            try:
+                cfg = json.loads(m.group(1).strip())
+                if isinstance(cfg, dict):
+                    if cfg.get("url"):
+                        add(cfg["url"])
+                    for entry in (cfg.get("urls") or []):
+                        if isinstance(entry, dict) and entry.get("url"):
+                            add(entry["url"])
+            except Exception:
+                pass
+
+        # 2. Redoc: <redoc spec-url="..."> ; Scalar: data-configuration='{"spec":{"url":"..."}}'
+        for m in re.finditer(r'data-configuration\s*=\s*[\'"]([^\'"]+)[\'"]', html):
+            try:
+                cfg = json.loads(m.group(1).replace("&quot;", '"'))
+                spec = (cfg.get("spec") or {}) if isinstance(cfg, dict) else {}
+                if spec.get("url"):
+                    add(spec["url"])
+            except Exception:
+                pass
+
+        # 3. Явный <link rel="alternate" type="application/openapi+json" href="...">
+        for m in re.finditer(
+            r'<link[^>]+rel=[\'"]?alternate[\'"]?[^>]+type=[\'"]?application/(?:openapi|json|yaml)[^\'"]*[\'"]?[^>]+href=[\'"]([^\'"]+)[\'"]',
+            html, re.I,
+        ):
+            add(m.group(1))
+
+        # 4. Fallback — просто любые ссылки на *.json/*.yaml/*.yml, лежащие
+        #    в скриптах. Отсеиваем шум (bootstrap.min.css.map и т.п.).
+        for m in re.finditer(r'["\']([^"\']+\.(?:json|ya?ml))(?:["\']|\?)', html):
+            u = m.group(1)
+            low = u.lower()
+            if any(x in low for x in ("openapi", "swagger", "schema", "api-docs", "spec")):
+                add(u)
+
+        # 5. Микросервисный агрегатор: массив services / apis / apps c полем
+        #    path/slug/name/id + template-строка вида `/${x}/docs-json`.
+        #    Разворачиваем: для каждого сервиса подставляем в шаблон и
+        #    добавляем как кандидата.
+        paths = []
+        for m in re.finditer(
+            r'(?:services|apis|apps|specs|schemas)\s*=\s*\[(.+?)\]',
+            html, re.S,
+        ):
+            arr = m.group(1)
+            for pm in re.finditer(
+                r'\b(?:path|slug|name|id|key)\s*:\s*["\']([\w\-./]+)["\']',
+                arr,
+            ):
+                p = pm.group(1).strip("/")
+                if p and p not in paths:
+                    paths.append(p)
+        # Шаблоны URL с ${...} — распространено в JS-инициализаторах
+        # ("/${servicePath}/docs-json", `/${x}/openapi.json` и т.д.)
+        templates = []
+        for m in re.finditer(
+            r'[`\'"]([/\w\-.]*\$\{[^}]+\}[/\w\-.]*)[`\'"]',
+            html,
+        ):
+            t = m.group(1)
+            if t and t not in templates:
+                templates.append(t)
+
+        if paths:
+            expanded = []
+            if templates:
+                for tmpl in templates:
+                    for p in paths:
+                        expanded.append(re.sub(r'\$\{[^}]+\}', p, tmpl))
+            # Даже если шаблонов не нашли — попробуем типовые суффиксы
+            # NestJS/FastAPI/DRF, куда обычно кладут спеку каждого сервиса.
+            for p in paths:
+                for suf in ("/docs-json", "/api-json", "/openapi.json",
+                            "/swagger.json", "/schema/", "/schema.json"):
+                    expanded.append("/" + p + suf)
+            for e in expanded:
+                add(e)
+
+        # Приоритет: сначала явные openapi/swagger/api-json/docs-json,
+        # затем schema, затем всё что кончается на .json/.yaml.
+        # Для агрегаторов может быть много кандидатов — не режем сильно.
+        def priority(u):
+            l = u.lower()
+            if "openapi" in l or "swagger" in l: return 0
+            if "docs-json" in l or "api-json" in l: return 0  # NestJS defaults
+            if "schema" in l: return 1
+            if l.endswith((".json", ".yaml", ".yml")): return 2
+            return 3
+        found.sort(key=priority)
+        return found[:40]
 
     def _parse_spec_text(self, text):
         """

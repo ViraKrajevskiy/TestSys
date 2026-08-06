@@ -68,6 +68,16 @@ window.App = window.App || {};
     profSel.addEventListener("change", syncProf);
     syncProf();
 
+    // Режим: по количеству запросов или по длительности
+    const modeSel = document.getElementById("load-mode");
+    const syncMode = () => {
+      const m = modeSel.value;
+      document.getElementById("load-count-wrap").style.display    = m === "count"    ? "" : "none";
+      document.getElementById("load-duration-wrap").style.display = m === "duration" ? "" : "none";
+    };
+    modeSel.addEventListener("change", syncMode);
+    syncMode();
+
     _renderIndicator();
   };
 
@@ -143,12 +153,20 @@ window.App = window.App || {};
     run.startedAtWall = Date.now();
     run.nextIdx = 0;
     run.workers = [];      // регистрируем всех воркеров, чтобы дождаться
+    // В duration-режиме дедлайн — от wall-clock, чтобы UI показывал
+    // оставшееся время без загадок.
+    run.deadlineAt = settings.mode === "duration"
+      ? Date.now() + settings.durationMs
+      : 0;
 
     _renderPhase();
     _scheduleRender();
     _renderIndicator();
 
-    const N = Math.min(settings.concurrency, settings.count);
+    // В duration-режиме считаем concurrency максимумом; count здесь не лимит.
+    const N = settings.mode === "duration"
+      ? settings.concurrency
+      : Math.min(settings.concurrency, settings.count);
     const spawn = () => {
       if (run.aborted || run.workers.length >= N) return;
       run.workers.push(_worker(run));
@@ -175,8 +193,12 @@ window.App = window.App || {};
     // Обычный Promise.all(workers) взял бы только текущий срез.
     await _waitAllWorkers(run);
 
-    run.running = false;
-    run.finishedAt = performance.now();
+    // Если _stopCurrent уже пометил сессию как остановленную — не перезаписываем
+    // finishedAt поздним временем (иначе RPS в стате получится заниженный).
+    if (run.running) {
+      run.running = false;
+      run.finishedAt = performance.now();
+    }
     _renderPhase();
     _renderAll();
     _renderIndicator();
@@ -195,13 +217,26 @@ window.App = window.App || {};
   }
 
   async function _worker(run) {
+    const s = run.settings;
     while (!run.aborted) {
+      // Условие останова: либо количество, либо wall-clock дедлайн.
+      if (s.mode === "duration") {
+        if (Date.now() >= run.deadlineAt) break;
+      } else {
+        if (run.nextIdx >= s.count) break;
+      }
       const i = run.nextIdx++;
-      if (i >= run.settings.count) break;
 
       run.inFlight++;
-      const result = await _runOne(run.tab, run.settings);
+      const result = await _runOne(run.tab, s);
       run.inFlight--;
+      // Если во время in-flight запроса пользователь нажал Stop — результат
+      // молча выкидываем и выходим. Тайминги in-flight не отменяются
+      // (requests.request нельзя оборвать снаружи), но CSV/статистика/UI
+      // не получат «постстоп-мусор» и не будут показывать «в процессе»
+      // ещё 30 секунд, пока догорят таймауты.
+      if (run.aborted) break;
+      result.warmup = i < (s.warmup || 0);
       run.results.push(result);
 
       // Свежую rate-limit инфу вешаем на run, чтобы панель показала последнее
@@ -213,11 +248,15 @@ window.App = window.App || {};
       // Уважаем Retry-After — если сервер попросил подождать, ждём столько,
       // сколько попросили, а не долбим дальше. Это правильное клиентское
       // поведение и способ не спровоцировать более жёсткий блок.
-      if (result.retryAfterMs > 0 && run.settings.respectRetryAfter && !run.aborted) {
+      if (result.retryAfterMs > 0 && s.respectRetryAfter && !run.aborted) {
         run.throttledCount = (run.throttledCount || 0) + 1;
         await _sleepAbortable(result.retryAfterMs, run);
-      } else if (run.settings.delayMs > 0 && !run.aborted && run.nextIdx < run.settings.count) {
-        await _sleep(run.settings.delayMs);
+      } else if (s.delayMs > 0 && !run.aborted) {
+        // В duration-режиме продолжаем спать даже на последнем шаге —
+        // всё равно проверим дедлайн в начале цикла.
+        if (s.mode === "duration" || run.nextIdx < s.count) {
+          await _sleep(s.delayMs);
+        }
       }
     }
   }
@@ -234,7 +273,19 @@ window.App = window.App || {};
 
   function _stopCurrent() {
     const run = _current();
-    if (run) run.aborted = true;
+    if (!run) return;
+    run.aborted = true;
+    // UI мгновенно переводим в "stopped": in-flight запросы всё равно догорят
+    // (30-секундный таймаут requests снаружи не отменить), но пользователю
+    // не нужно смотреть "в процессе" ещё полминуты. Их результаты воркер уже
+    // не запишет — см. проверку `if (run.aborted) break` в _worker.
+    if (run.running) {
+      run.running = false;
+      run.finishedAt = performance.now();
+    }
+    _renderPhase();
+    _renderAll();
+    _renderIndicator();
   }
 
   /** Один запрос — с замером и валидацией через Tests-скрипт */
@@ -358,15 +409,18 @@ window.App = window.App || {};
   const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   function _readForm() {
+    const mode        = document.getElementById("load-mode").value || "count";
     const count       = clamp(+document.getElementById("load-count").value, 1, 100000);
+    const durationMs  = clamp(+document.getElementById("load-duration").value * 1000, 1000, 3600000);
     const concurrency = clamp(+document.getElementById("load-concurrency").value, 1, 500);
     const delayMs     = clamp(+document.getElementById("load-delay").value, 0, 60000);
+    const warmup      = clamp(+document.getElementById("load-warmup").value, 0, 10000);
     const profile     = document.getElementById("load-profile").value || "constant";
     const rampupMs    = clamp(+document.getElementById("load-rampup").value * 1000, 500, 600000);
     const spikeAtMs   = clamp(+document.getElementById("load-spike").value * 1000, 500, 600000);
     const respectRetryAfter = document.getElementById("load-respect-retry").checked;
-    if (isNaN(count) || count < 1) { App.showAlert(App.t("loadBadCount")); return null; }
-    return { count, concurrency, delayMs, profile, rampupMs, spikeAtMs, respectRetryAfter };
+    if (mode === "count" && (isNaN(count) || count < 1)) { App.showAlert(App.t("loadBadCount")); return null; }
+    return { mode, count, durationMs, concurrency, delayMs, warmup, profile, rampupMs, spikeAtMs, respectRetryAfter };
   }
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
@@ -402,15 +456,24 @@ window.App = window.App || {};
       return;
     }
 
+    // Прогресс усредняем: для count — по запросам, для duration — по времени.
+    let sumPct = 0;
+    active.forEach(r => {
+      if (r.settings && r.settings.mode === "duration") {
+        const el = Math.max(0, Date.now() - r.startedAtWall);
+        sumPct += Math.min(100, r.settings.durationMs ? el / r.settings.durationMs * 100 : 0);
+      } else if (r.settings && r.settings.count) {
+        sumPct += r.results.length / r.settings.count * 100;
+      }
+    });
+    const pct = Math.round(sumPct / active.length);
     const done = active.reduce((s, r) => s + r.results.length, 0);
-    const total = active.reduce((s, r) => s + (r.settings ? r.settings.count : 0), 0);
-    const pct = total ? Math.round(done / total * 100) : 0;
 
     _navIndicatorEl.textContent = active.length > 1
       ? `${active.length}·${pct}%`
       : `${pct}%`;
     _navIndicatorEl.style.display = "";
-    _navIndicatorEl.title = `${active.length} ${App.t("loadRunning")} — ${done}/${total}`;
+    _navIndicatorEl.title = `${active.length} ${App.t("loadRunning")} — ${done} ${App.t("requests") || "запросов"}`;
     btn.classList.add("load-nav-active");
   }
 
@@ -481,7 +544,9 @@ window.App = window.App || {};
       status.style.color = "var(--accent)";
     } else if (run.aborted) {
       status.textContent = App.t("loadAborted"); status.style.color = "#ffc107";
-    } else if (run.results.length && run.settings && run.results.length >= run.settings.count) {
+    } else if (run.results.length && run.settings && run.finishedAt) {
+      // Раньше проверяли results.length >= settings.count, но для duration-режима
+      // это некорректно (count там не порог). Опираемся на finishedAt.
       status.textContent = App.t("loadDone"); status.style.color = "#22c55e";
     } else {
       status.textContent = "";
@@ -497,11 +562,38 @@ window.App = window.App || {};
       bar.style.width = "0%"; txt.textContent = "—";
       return;
     }
-    const done = run.results.length;
-    const total = run.settings.count;
-    const pct = total ? Math.round(done / total * 100) : 0;
-    bar.style.width = pct + "%";
-    txt.textContent = `${done} / ${total}  (${pct}%)  ${run.inFlight ? "· " + run.inFlight + " " + (App.t("inFlight") || "в полёте") : ""}`;
+    const inFlight = run.inFlight
+      ? ` · ${run.inFlight} ${App.t("inFlight") || "в полёте"}`
+      : "";
+    if (run.settings.mode === "duration") {
+      const now = run.running ? Date.now() : (run.startedAtWall + (run.finishedAt - run.startedAt));
+      const elapsed = Math.max(0, now - run.startedAtWall);
+      const totalMs = run.settings.durationMs;
+      const pct = totalMs ? Math.min(100, Math.round(elapsed / totalMs * 100)) : 0;
+      bar.style.width = pct + "%";
+      txt.textContent = `${_fmtMs(elapsed)} / ${_fmtMs(totalMs)}  (${pct}%)` +
+        `  · ${run.results.length} ${App.t("requests") || "запросов"}${inFlight}`;
+    } else {
+      const done = run.results.length;
+      const total = run.settings.count;
+      const pct = total ? Math.round(done / total * 100) : 0;
+      bar.style.width = pct + "%";
+      txt.textContent = `${done} / ${total}  (${pct}%)${inFlight}`;
+    }
+  }
+
+  function _fmtMs(ms) {
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return s + "s";
+    const m = Math.floor(s / 60);
+    const rest = s % 60;
+    return m + "m " + (rest < 10 ? "0" : "") + rest + "s";
+  }
+
+  /** Отсеиваем warmup-фазу — она портит p50/p95 из-за холодных соединений. */
+  function _measuredResults(run) {
+    if (!run || !run.results) return [];
+    return run.results.filter(r => !r.warmup);
   }
 
   function _renderSummary() {
@@ -509,7 +601,12 @@ window.App = window.App || {};
     const box = document.getElementById("load-summary");
     if (!run || !run.results.length) { box.innerHTML = ""; return; }
 
-    const results = run.results;
+    // Всё сводим по «измеренным» — из статистики исключаем warmup-запросы.
+    // Сами warmup-запросы тоже остаются в run.results, чтобы посчитать их
+    // отдельным стат-тайлом и не «терять» — просто не портить перцентили.
+    const results = _measuredResults(run);
+    const warmupCount = run.results.length - results.length;
+    if (!results.length) { box.innerHTML = ""; return; }
     const total = results.length;
     const passList = results.filter(r => r.ok);
     const pass = passList.length;
@@ -546,6 +643,7 @@ window.App = window.App || {};
 
     box.innerHTML = `
       ${_stat(App.t("total"), total, "bi-send")}
+      ${warmupCount ? _stat(App.t("loadWarmupSkipped") || "warmup (искл.)", warmupCount, "bi-thermometer-sun", "var(--text-dim)") : ""}
       ${_stat(App.t("successful"), `${pass} <small style="color:var(--text-dim);">(${passPct}%)</small>`, "bi-check-circle", "#22c55e")}
       ${_stat(App.t("failed"), fail, "bi-x-circle", fail ? "#dc3545" : "var(--text-dim)")}
       ${_stat("RPS", rps, "bi-lightning")}
@@ -778,9 +876,10 @@ window.App = window.App || {};
       const s = String(v ?? "");
       return /["\n;,]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
-    const rows = [["#", "OK", "Status", "Time_ms", "Size", "Error", "Timestamp"]];
+    const rows = [["#", "OK", "Status", "Time_ms", "Size", "Warmup", "Error", "Timestamp"]];
     run.results.forEach((r, i) => rows.push([
       i + 1, r.ok ? "1" : "0", r.status || "", r.ms, r.size || 0,
+      r.warmup ? "1" : "0",
       r.error || r.testError || "",
       r.ts ? new Date(r.ts).toISOString() : "",
     ]));
@@ -837,8 +936,19 @@ window.App = window.App || {};
 
             <div class="row g-2 mb-2">
               <div class="col-md-3">
+                <label class="form-label" style="font-size:12px;" data-i18n="loadMode">Режим</label>
+                <select id="load-mode" class="form-select form-select-sm">
+                  <option value="count" data-i18n-opt="loadModeCount">По количеству запросов</option>
+                  <option value="duration" data-i18n-opt="loadModeDuration">По длительности (секунд)</option>
+                </select>
+              </div>
+              <div class="col-md-3" id="load-count-wrap">
                 <label class="form-label" style="font-size:12px;" data-i18n="loadCount">Количество запросов</label>
                 <input type="number" class="form-control form-control-sm" id="load-count" value="100" min="1" max="100000">
+              </div>
+              <div class="col-md-3" id="load-duration-wrap" style="display:none;">
+                <label class="form-label" style="font-size:12px;" data-i18n="loadDuration">Длительность (сек)</label>
+                <input type="number" class="form-control form-control-sm" id="load-duration" value="30" min="1" max="3600">
               </div>
               <div class="col-md-3">
                 <label class="form-label" style="font-size:12px;" data-i18n="loadConcurrency">Параллельно</label>
@@ -879,7 +989,13 @@ window.App = window.App || {};
                 <label class="form-label" style="font-size:12px;" data-i18n="loadSpikeSec">Spike через (сек)</label>
                 <input type="number" class="form-control form-control-sm" id="load-spike" value="5" min="1" max="600">
               </div>
-              <div class="col-md-6 d-flex align-items-end">
+              <div class="col-md-3">
+                <label class="form-label" style="font-size:12px;" data-i18n="loadWarmup">Warmup (запросов)</label>
+                <input type="number" class="form-control form-control-sm" id="load-warmup" value="0" min="0" max="10000"
+                       data-i18n-title="loadWarmupHint"
+                       title="Первые N запросов не идут в статистику — исключают JIT/TCP/TLS-разогрев.">
+              </div>
+              <div class="col-md-3 d-flex align-items-end">
                 <div class="form-check form-switch">
                   <input class="form-check-input" type="checkbox" id="load-respect-retry" checked>
                   <label class="form-check-label" for="load-respect-retry" style="font-size:12px;" data-i18n="loadRespectRetry">

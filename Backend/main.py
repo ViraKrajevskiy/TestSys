@@ -96,6 +96,10 @@ else:
     USER_DATA_DIR = os.path.dirname(BASE_DIR)
 
 INDEX_HTML = os.path.join(BASE_DIR, "Ui", "index.html")
+# Иконка окна: pywebview.start(icon=...). На Windows под капотом
+# System.Drawing.Icon — принимает ТОЛЬКО .ico. PNG падает с ArgumentException.
+# .ico лежит в Backend/icon.ico; для frozen exe его кладёт TestSys.spec (datas).
+ICON_PATH = os.path.join(BASE_DIR, "icon.ico")
 
 # Пробрасываем в api.py / database.py, чтобы log/theme/db писались куда надо
 os.environ["TESTSYS_USER_DATA_DIR"] = USER_DATA_DIR
@@ -279,6 +283,44 @@ def _maybe_run_cli():
         return 1
 
 
+def _wire_file_drop(window):
+    """
+    Подписывается на файлы, брошенные в окно, и отдаёт их в JS через
+    CustomEvent 'pywebview:files-dropped'. JS сам решает, куда положить
+    (только если открыта вкладка Files).
+    Работает на pywebview 6.x; на старых версиях — тихо ничего не делает.
+    """
+    import json as _json
+    def on_dropped(*args):
+        files = args[-1] if args else []
+        if not files:
+            return
+        infos = []
+        for p in files:
+            try:
+                path = str(p)
+                infos.append({
+                    "path": path,
+                    "name": os.path.basename(path),
+                    "size": os.path.getsize(path),
+                })
+            except OSError:
+                continue
+        if not infos:
+            return
+        try:
+            window.evaluate_js(
+                "window.dispatchEvent(new CustomEvent('pywebview:files-dropped',"
+                "{detail: " + _json.dumps(infos) + "}))"
+            )
+        except Exception:
+            pass
+    try:
+        window.events.files_dropped += on_dropped
+    except Exception:
+        pass  # старая pywebview — drag&drop недоступен
+
+
 def main():
     # CLI-режим — не поднимаем GUI, отработали и вышли с exit code для CI
     exit_code = _maybe_run_cli()
@@ -315,7 +357,7 @@ def main():
     try:
         print("[*] Запускаю UI...")
         api = Api()
-        webview.create_window(
+        main_window = webview.create_window(
             title="TestSys",
             url=INDEX_HTML,
             js_api=api,
@@ -323,11 +365,15 @@ def main():
             height=820,
             min_size=(900, 600),
         )
+        _wire_file_drop(main_window)
         # Явно выбираем HTTP-порт для встроенного сервера pywebview.
         # По умолчанию он берёт случайный — иногда попадает в «опасные»
         # порты Chromium (4045, 6000, 6666, ...) и Edge отдаёт ERR_UNSAFE_PORT.
         # 17800+ — сильно выше системных, вне блок-листа, вне HTTP-стандарта.
-        webview.start(http_port=_find_safe_port(17800))
+        start_kw = {"http_port": _find_safe_port(17800)}
+        if os.path.exists(ICON_PATH):
+            start_kw["icon"] = ICON_PATH
+        webview.start(**start_kw)
     except Exception as e:
         print(f"[ERROR] Ошибка UI: {e}")
         traceback.print_exc()
