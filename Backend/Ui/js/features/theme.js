@@ -177,14 +177,18 @@ window.App = window.App || {};
     root.style.setProperty("--success", t.success);
     root.style.setProperty("--warn",    t.warn);
     root.style.setProperty("--danger",  t.danger);
-    root.style.setProperty("--success-soft", withAlpha(t.success, 0.15));
-    root.style.setProperty("--warn-soft",    withAlpha(t.warn,    0.15));
-    root.style.setProperty("--danger-soft",  withAlpha(t.danger,  0.15));
+    // 0.20 — минимум, при котором заливка читается в тёмных темах.
+    // На 0.15 hover сливался с --bg-panel (проверено на TestSys Dark / Nord).
+    root.style.setProperty("--success-soft", withAlpha(t.success, 0.20));
+    root.style.setProperty("--warn-soft",    withAlpha(t.warn,    0.20));
+    root.style.setProperty("--danger-soft",  withAlpha(t.danger,  0.20));
 
     // Читаемый цвет текста поверх акцента — считаем контраст
     root.style.setProperty("--accent-text", contrastText(t.accent));
-    root.style.setProperty("--accent-soft",  withAlpha(t.accent, 0.12));
-    root.style.setProperty("--accent-focus", withAlpha(t.accent, 0.25));
+    // См. api.py: 0.22 = ~16 единиц RGB разницы, достаточно чтобы заметить hover
+    root.style.setProperty("--accent-soft",  withAlpha(t.accent, 0.22));
+    root.style.setProperty("--accent-hover", withAlpha(t.accent, 0.32));
+    root.style.setProperty("--accent-focus", withAlpha(t.accent, 0.35));
 
     // Bootstrap-переключение — для его собственных цветов кнопок и т.п.
     const isLight = isLightColor(t.bgApp);
@@ -298,7 +302,8 @@ window.App = window.App || {};
   // ЗАГРУЗКА СОХРАНЁННОЙ ТЕМЫ ПРИ СТАРТЕ
   // ============================================================
   App.loadAndApplySavedTheme = async function () {
-    const api = await _waitForPywebview(3000);
+    // Ждём конкретный метод — api-объект появляется раньше своих методов
+    const api = await App.waitForApi("load_theme", 15000);
     if (!api) return;
     try {
       const raw = await api.load_theme();
@@ -315,17 +320,6 @@ window.App = window.App || {};
     }
   };
 
-  function _waitForPywebview(timeout) {
-    return new Promise((resolve) => {
-      if (window.pywebview && window.pywebview.api) return resolve(window.pywebview.api);
-      const start = Date.now();
-      const iv = setInterval(() => {
-        if (window.pywebview && window.pywebview.api) { clearInterval(iv); resolve(window.pywebview.api); }
-        else if (Date.now() - start > timeout) { clearInterval(iv); resolve(null); }
-      }, 100);
-    });
-  }
-
   /** Сохранить и применить одновременно. */
   App.saveAndApplyTheme = async function (theme) {
     const t = _fill(theme);
@@ -334,8 +328,8 @@ window.App = window.App || {};
     // чтобы инлайн-скрипт в <head> мог применить его мгновенно без флеша.
     const toSave = Object.assign({}, t, { accentText: contrastText(t.accent) });
     try { localStorage.setItem(QUICK_KEY, JSON.stringify(toSave)); } catch (_) {}
-    const api = window.pywebview && window.pywebview.api;
-    if (api && api.save_theme) {
+    const api = await App.waitForApi("save_theme", 5000);
+    if (api) {
       try { await api.save_theme(JSON.stringify(t)); } catch (e) { console.warn(e); }
     }
     return t;

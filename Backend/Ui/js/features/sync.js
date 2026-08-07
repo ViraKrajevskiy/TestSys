@@ -557,7 +557,7 @@ window.App = window.App || {};
     bar.innerHTML = `
       <i class="bi bi-arrow-repeat" style="color:var(--accent);"></i>
       <span id="sync-change-text" style="flex:1;">Коллекции изменены</span>
-      <button class="btn btn-sm" id="sync-pull-now" style="font-size:11px;padding:2px 10px;background:var(--accent);color:#fff;border:none;border-radius:4px;">
+      <button class="btn btn-sm" id="sync-pull-now" style="font-size:11px;padding:2px 10px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);">
         Загрузить
       </button>
       <button class="btn btn-sm" id="sync-dismiss" style="font-size:11px;padding:2px 8px;background:none;color:var(--text-dim);border:none;">

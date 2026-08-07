@@ -46,8 +46,9 @@ const UnifiedRandomizer = (() => {
   async function _loadCustomTplFromDisk() {
     if (_tplLoadedFromDisk) return;
     try {
-      const api = await _waitForApi(3000);
-      if (!api || !api.load_rand_templates) return;
+      // Ждём конкретный метод — api-объект появляется раньше своих методов
+      const api = await App.waitForApi("load_rand_templates", 15000);
+      if (!api) return;
       const raw = await api.load_rand_templates();
       if (raw) {
         const parsed = JSON.parse(raw);
@@ -61,28 +62,14 @@ const UnifiedRandomizer = (() => {
     } catch (e) { console.warn("[Randomizer] load templates:", e); }
   }
 
-  function _waitForApi(timeout) {
-    return new Promise(resolve => {
-      if (window.pywebview && window.pywebview.api) return resolve(window.pywebview.api);
-      const start = Date.now();
-      const iv = setInterval(() => {
-        if (window.pywebview && window.pywebview.api) { clearInterval(iv); resolve(window.pywebview.api); }
-        else if (Date.now() - start > timeout) { clearInterval(iv); resolve(null); }
-      }, 100);
-    });
-  }
-
   function _saveCustomTpl() {
     // Синхронно в localStorage — чтобы UI не ждал
     try { localStorage.setItem(_CTL_KEY, JSON.stringify(_customTemplates)); } catch (_) {}
     // И на диск через Python — переживёт перезапуск
-    try {
-      const api = window.pywebview && window.pywebview.api;
-      if (api && api.save_rand_templates) {
-        api.save_rand_templates(JSON.stringify(_customTemplates))
-          .catch(e => console.warn("[Randomizer] save templates:", e));
-      }
-    } catch (_) {}
+    App.waitForApi("save_rand_templates", 5000).then(api => {
+      if (!api) return;
+      return api.save_rand_templates(JSON.stringify(_customTemplates));
+    }).catch(e => console.warn("[Randomizer] save templates:", e));
   }
   function _renderCustomTpls() {
     const list = document.querySelector(".ur-root #ur-custom-tpl-list");
@@ -94,10 +81,10 @@ const UnifiedRandomizer = (() => {
     }
     list.innerHTML = keys.map(id => `
       <span class="ur-custom-tpl-chip" data-id="${id}" style="display:inline-flex;align-items:center;gap:2px;">
-        <button class="ur-example-btn randomizer-btn ur-ctpl-load" data-id="${id}" style="font-size:11px;padding:3px 6px;border-radius:4px 0 0 4px;">
+        <button class="ur-example-btn randomizer-btn ur-ctpl-load" data-id="${id}" style="font-size:11px;padding:3px 6px;border-radius:var(--radius) 0 0 var(--radius);">
           💾 ${App.escapeHtml(_customTemplates[id].label)}
         </button>
-        <button class="randomizer-btn ur-ctpl-del" data-id="${id}" style="font-size:11px;padding:3px 5px;border-radius:0 4px 4px 0;border-left:1px solid var(--border-color);opacity:.7;" title="Удалить шаблон">✕</button>
+        <button class="randomizer-btn ur-ctpl-del" data-id="${id}" style="font-size:11px;padding:3px 5px;border-radius:0 var(--radius) var(--radius) 0;border-left:1px solid var(--border-color);opacity:.7;" title="Удалить шаблон">✕</button>
       </span>`).join("");
     list.querySelectorAll(".ur-ctpl-load").forEach(b => {
       b.addEventListener("click", () => {

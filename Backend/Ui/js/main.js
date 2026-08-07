@@ -69,8 +69,12 @@ App.init = function () {
 
   document.getElementById("add-tab-btn").addEventListener("click", () => App.addTab());
   document.getElementById("close-all-btn").addEventListener("click", () => App.closeAllTabs());
-  document.getElementById("sidebar-toggle-btn").addEventListener("click", () => {
-    document.getElementById("app-root").classList.toggle("sidebar-collapsed");
+  document.getElementById("sidebar-toggle-btn").addEventListener("click", (e) => {
+    const root = document.getElementById("app-root");
+    const hidden = root.classList.toggle("sidebar-collapsed");
+    // Подсвечиваем кнопку, когда панель скрыта — иначе непонятно,
+    // куда она делась (особенно в плавающем режиме).
+    e.currentTarget.classList.toggle("active", hidden);
   });
 
   const returnBtn = document.getElementById("return-to-main-btn");

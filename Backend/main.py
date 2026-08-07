@@ -79,7 +79,7 @@ BACKEND_DIR_LOCAL = os.path.dirname(os.path.abspath(__file__))
 if BACKEND_DIR_LOCAL not in sys.path:
     sys.path.insert(0, BACKEND_DIR_LOCAL)
 
-from api import Api
+from api import Api, write_theme_boot_css, USER_DATA_DIR as _USER_DATA_DIR
 
 # ============================================================
 # PATHS (работает и в dev, и в PyInstaller onefile)
@@ -353,6 +353,17 @@ def main():
         time.sleep(0.3)
     else:
         print("[WARN] Backend не ответил за 15 сек, запускаю UI без ожидания")
+
+    # Boot-CSS темы генерируем ДО открытия окна — иначе первый кадр
+    # отрисуется дефолтной темой (тот самый «флеш» при старте).
+    try:
+        _theme_path = os.path.join(_USER_DATA_DIR, "theme.json")
+        if os.path.exists(_theme_path):
+            with open(_theme_path, "r", encoding="utf-8") as _f:
+                write_theme_boot_css(_f.read())
+            print("[OK] Тема применена до старта UI")
+    except Exception as _e:
+        print(f"[WARN] Не удалось применить тему заранее: {_e}")
 
     try:
         print("[*] Запускаю UI...")

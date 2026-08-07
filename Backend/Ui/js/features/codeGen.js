@@ -146,7 +146,7 @@ window.App = window.App || {};
           </div>
           <div style="position:relative;">
             <pre id="cg-code" style="margin:0;padding:16px 16px 12px;font-size:12px;overflow:auto;max-height:380px;background:var(--bg-input);color:var(--text);white-space:pre-wrap;word-break:break-all;"></pre>
-            <button id="cg-copy" title="Копировать" style="position:absolute;top:8px;right:8px;background:var(--accent);color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;">
+            <button id="cg-copy" title="Копировать" style="position:absolute;top:8px;right:8px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:3px 10px;font-size:11px;cursor:pointer;">
               <i class="bi bi-clipboard"></i>
             </button>
           </div>

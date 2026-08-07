@@ -1,5 +1,40 @@
 window.App = window.App || {};
 
+/**
+ * Дождаться конкретного метода pywebview API.
+ *
+ * ВАЖНО: проверять только window.pywebview.api нельзя — pywebview создаёт
+ * объект api ДО того, как прикрепит к нему методы. Поллер ловил пустой
+ * объект, и вызовы падали с "api.load_theme is not a function".
+ * Поэтому ждём typeof конкретного метода === "function".
+ *
+ * @param method  имя метода, который реально нужен (например "load_collections")
+ * @param timeout мс; по умолчанию 15000
+ * @returns Promise<api|null>  null — метод так и не появился
+ */
+App.waitForApi = function (method, timeout = 15000) {
+  const ready = () =>
+    window.pywebview && window.pywebview.api &&
+    typeof window.pywebview.api[method] === "function";
+
+  return new Promise((resolve) => {
+    if (ready()) return resolve(window.pywebview.api);
+    const start = Date.now();
+    // pywebviewready — штатное событие моста; ловим и его, и поллим
+    const onReady = () => { if (ready()) done(window.pywebview.api); };
+    window.addEventListener("pywebviewready", onReady);
+    const iv = setInterval(() => {
+      if (ready()) done(window.pywebview.api);
+      else if (Date.now() - start > timeout) done(null);
+    }, 100);
+    function done(val) {
+      clearInterval(iv);
+      window.removeEventListener("pywebviewready", onReady);
+      resolve(val);
+    }
+  });
+};
+
 App.escapeHtml = function (str) {
   return String(str || "")
     .replace(/&/g, "&amp;")

@@ -179,7 +179,7 @@ window.App = window.App || {};
     if (!q) return html;
     const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return html.replace(new RegExp(`(${escaped})`, "gi"),
-      `<mark style="background:var(--accent);color:#fff;border-radius:2px;padding:0 1px;">$1</mark>`);
+      `<mark style="background:var(--accent);color:#fff;border-radius:var(--radius-sm);padding:0 1px;">$1</mark>`);
   }
 
   // ============================================================
@@ -387,7 +387,7 @@ window.App = window.App || {};
           // Подменю — показывается при наведении
           const sub = document.createElement("div");
           sub.className = "sb-pos-menu sb-submenu";
-          sub.style.cssText = "position:fixed;width:200px;display:none;z-index:10001;";
+          sub.style.cssText = "position:fixed;width:220px;display:none;z-index:10001;";
           document.body.appendChild(sub);
           _buildMenu(sub, it.sub);
 
@@ -395,10 +395,30 @@ window.App = window.App || {};
           const _showSub = () => {
             clearTimeout(_subHideTimer);
             document.querySelectorAll(".sb-submenu").forEach(s => { if (s !== sub) s.style.display = "none"; });
-            const r = btn.getBoundingClientRect();
-            let left = r.right;
-            if (left + 204 > window.innerWidth) left = r.left - 204;
-            sub.style.top = r.top + "px";
+
+            // Позиционируем относительно ВСЕГО меню, а не отдельного пункта:
+            // иначе подменю уходит внутрь основного меню и налезает на него.
+            const menuRect = menu.getBoundingClientRect();
+            const btnRect  = btn.getBoundingClientRect();
+            const subW = sub.offsetWidth  || 220;
+            const subH = sub.offsetHeight || 200;
+            const gap = 4, pad = 8;
+
+            let left;
+            if (menuRect.right + gap + subW + pad <= window.innerWidth) {
+              left = menuRect.right + gap;                 // справа от меню
+            } else if (menuRect.left - gap - subW >= pad) {
+              left = menuRect.left - subW - gap;           // слева от меню
+            } else {
+              left = Math.max(pad, window.innerWidth - subW - pad);
+            }
+
+            // По вертикали выравниваем на пункт, но не даём вылезти вниз/вверх
+            let top = btnRect.top;
+            if (top + subH + pad > window.innerHeight) top = window.innerHeight - subH - pad;
+            if (top < pad) top = pad;
+
+            sub.style.top  = top + "px";
             sub.style.left = left + "px";
             sub.style.display = "";
           };

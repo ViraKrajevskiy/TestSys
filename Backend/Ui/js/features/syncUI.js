@@ -703,7 +703,7 @@ window.App = window.App || {};
                   Требовать вход по логину/паролю (индивидуальные пользователи и права)
                 </label>
               </div>
-              <div id="sync-admin-fields" style="display:none;background:var(--bg-app);padding:8px;border-radius:4px;margin-bottom:6px;">
+              <div id="sync-admin-fields" style="display:none;background:var(--bg-app);padding:8px;border-radius:var(--radius);margin-bottom:6px;">
                 <div class="form-text" style="font-size:10px;color:var(--warn);margin-bottom:4px;">
                   <i class="bi bi-info-circle"></i>
                   <span data-i18n="firstAdminHint">При первом запуске создаётся владелец с этими данными. Дальше он управляет остальными пользователями.</span>
@@ -721,7 +721,7 @@ window.App = window.App || {};
                   <i class="bi bi-people-fill me-1"></i><span data-i18n="manageUsers">Пользователи и права</span>
                 </button>
               </div>
-              <div id="sync-host-status" style="font-size:12px;padding:8px;background:var(--bg-app);border-radius:4px;"></div>
+              <div id="sync-host-status" style="font-size:12px;padding:8px;background:var(--bg-app);border-radius:var(--radius);"></div>
               <div class="form-text" style="font-size:10px;margin-top:6px;" data-i18n="hostLanHint">⚠</div>
             </div>
 

@@ -103,7 +103,8 @@ window.App = window.App || {};
   // LOAD / SAVE
   // ============================================================
   App.loadSettings = async function () {
-    const api = await _waitForPywebview(3000);
+    // Ждём конкретный метод — объект api появляется раньше своих методов
+    const api = await App.waitForApi("load_settings", 15000);
     if (!api) return;
     try {
       const raw = await api.load_settings();
@@ -131,17 +132,6 @@ window.App = window.App || {};
         console.warn("[Settings] save error:", e);
       }
     }
-  }
-
-  function _waitForPywebview(timeout) {
-    return new Promise((resolve) => {
-      if (window.pywebview && window.pywebview.api) return resolve(window.pywebview.api);
-      const start = Date.now();
-      const iv = setInterval(() => {
-        if (window.pywebview && window.pywebview.api) { clearInterval(iv); resolve(window.pywebview.api); }
-        else if (Date.now() - start > timeout) { clearInterval(iv); resolve(null); }
-      }, 100);
-    });
   }
 
   // ============================================================

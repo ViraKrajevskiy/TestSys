@@ -63,7 +63,7 @@ window.App = window.App || {};
             <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:6px;display:flex;align-items:center;gap:8px;">
               <i class="bi bi-globe2"></i> ${App.escapeHtml(domain)}
               <button class="ck-del-domain btn btn-sm" data-domain="${App.escapeAttr(domain)}"
-                style="margin-left:auto;font-size:10px;padding:1px 7px;background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:4px;cursor:pointer;">
+                style="margin-left:auto;font-size:10px;padding:1px 7px;background:transparent;border:1px solid var(--border);color:var(--text-dim);border-radius:var(--radius);cursor:pointer;">
                 удалить домен
               </button>
             </div>
@@ -151,7 +151,7 @@ window.App = window.App || {};
       if (body.querySelector("#ck-add-form")) return;
       const form = document.createElement("div");
       form.id = "ck-add-form";
-      form.style.cssText = "display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;padding:10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-input);";
+      form.style.cssText = "display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center;padding:10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-input);";
       form.innerHTML = `
         <input id="ck-f-domain" class="form-control form-control-sm" placeholder="domain (example.com)" style="flex:1;min-width:130px;">
         <input id="ck-f-name"   class="form-control form-control-sm" placeholder="name" style="flex:1;min-width:100px;">

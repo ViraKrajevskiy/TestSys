@@ -152,7 +152,7 @@ window.App = window.App || {};
           </div>
 
           <!-- summary bar (hidden until run) -->
-          <div id="runner-summary" style="display:none;padding:8px 12px;border-radius:6px;background:var(--bg-input);font-size:12px;display:flex;gap:16px;align-items:center;">
+          <div id="runner-summary" style="display:none;padding:8px 12px;border-radius:var(--radius);background:var(--bg-input);font-size:12px;display:flex;gap:16px;align-items:center;">
             <span id="runner-sum-total" style="color:var(--text-dim);">0 запросов</span>
             <span id="runner-sum-pass" style="color:#4caf50;font-weight:600;">✓ 0 pass</span>
             <span id="runner-sum-fail" style="color:#f44336;font-weight:600;">✗ 0 fail</span>
@@ -162,7 +162,7 @@ window.App = window.App || {};
 
           <!-- progress -->
           <div id="runner-progress-wrap" style="display:none;">
-            <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
+            <div style="height:4px;background:var(--border);border-radius:var(--radius-sm);overflow:hidden;">
               <div id="runner-progress-bar" style="height:100%;width:0%;background:var(--accent);transition:width .2s;"></div>
             </div>
           </div>
@@ -220,14 +220,18 @@ window.App = window.App || {};
         let rowClass = "runner-row";
         let statusHtml = "";
         let testHtml = "";
+        let errorHtml = "";
 
         if (skipped) {
           skip++;
-          statusHtml = `<span style="color:var(--text-dim);">пропущен</span>`;
+          statusHtml = `<span class="runner-status runner-status-skip">skip</span>`;
           rowClass += " runner-skip";
         } else if (!response || !response.ok) {
           fail++;
-          statusHtml = `<span style="color:#f44336;">${App.escapeHtml(response?.error || "Ошибка")}</span>`;
+          // Текст ошибки может быть длинным — он уходит отдельной строкой
+          // под названием, а не в узкую правую колонку.
+          errorHtml = `<div class="runner-err">${App.escapeHtml(response?.error || "Ошибка")}</div>`;
+          statusHtml = `<span class="runner-status runner-status-err">ERR</span>`;
           rowClass += " runner-fail";
         } else {
           const sc = response.status_code;
@@ -245,33 +249,41 @@ window.App = window.App || {};
           if (overallOk) pass++; else fail++;
           rowClass += overallOk ? " runner-pass" : " runner-fail";
 
-          statusHtml = `<span style="color:${scOk ? "#4caf50" : "#f44336"};font-weight:600;">${sc}</span>
-            <span style="color:var(--text-dim);font-size:11px;">&nbsp;${elapsed}мс</span>`;
+          statusHtml =
+            `<span class="runner-status ${scOk ? "runner-status-ok" : "runner-status-err"}">${sc}</span>` +
+            `<span class="runner-time">${elapsed} мс</span>`;
 
           if (testResult && testResult.tests && testResult.tests.length) {
             testHtml = testResult.tests.map(a =>
-              `<div style="font-size:11px;color:${a.ok ? "#4caf50" : "#f44336"};">
-                ${a.ok ? "✓" : "✗"} ${App.escapeHtml(a.name || "")}
-                ${a.error ? `<span style="opacity:.7;"> — ${App.escapeHtml(a.error)}</span>` : ""}
+              `<div class="runner-test ${a.ok ? "ok" : "fail"}">
+                <span class="rt-mark">${a.ok ? "✓" : "✗"}</span>
+                <span class="rt-name">${App.escapeHtml(a.name || "")}${
+                  a.error ? ` <span class="rt-err">— ${App.escapeHtml(a.error)}</span>` : ""
+                }</span>
               </div>`
             ).join("");
+          }
+          if (testResult && testResult.error) {
+            errorHtml = `<div class="runner-err">${App.escapeHtml(testResult.error)}</div>`;
           }
         }
 
         const row = document.createElement("div");
         row.className = rowClass;
-        const folderLabel = folder ? `<span style="color:var(--text-dim);font-size:11px;">${App.escapeHtml(folder)} / </span>` : "";
+        const folderLabel = folder
+          ? `<span class="runner-folder">${App.escapeHtml(folder)} / </span>` : "";
         row.innerHTML = `
-          <div style="display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-bottom:1px solid var(--border);">
-            <span class="method-badge method-${(req.method||"GET").toLowerCase()}" style="flex-shrink:0;font-size:10px;padding:1px 5px;border-radius:3px;">
+          <div class="runner-row-inner">
+            <span class="method-badge method-${(req.method || "GET").toLowerCase()} runner-method">
               ${req.method || "GET"}
             </span>
-            <div style="flex:1;min-width:0;">
-              <div style="font-size:12px;">${folderLabel}${App.escapeHtml(req.name || req.url || "")}</div>
-              <div style="font-size:10px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${App.escapeHtml(req.url || "")}</div>
-              ${testHtml ? `<div style="margin-top:4px;">${testHtml}</div>` : ""}
+            <div class="runner-main">
+              <div class="runner-name" title="${App.escapeAttr(req.name || "")}">${folderLabel}${App.escapeHtml(req.name || req.url || "")}</div>
+              <div class="runner-url" title="${App.escapeAttr(req.url || "")}">${App.escapeHtml(req.url || "")}</div>
+              ${errorHtml}
+              ${testHtml ? `<div class="runner-tests">${testHtml}</div>` : ""}
             </div>
-            <div style="flex-shrink:0;text-align:right;">${statusHtml}</div>
+            <div class="runner-right">${statusHtml}</div>
           </div>`;
         resultsDiv.appendChild(row);
         resultsDiv.scrollTop = resultsDiv.scrollHeight;

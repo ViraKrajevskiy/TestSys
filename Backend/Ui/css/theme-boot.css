@@ -1,0 +1,25 @@
+/* Автогенерируется api.py при сохранении темы. Не редактировать. */
+:root {
+  --accent: #6366f1;
+  --bg-app: #14151a;
+  --bg-panel: #1a1c22;
+  --bg-input: #20232b;
+  --text-main: #e6e7eb;
+  --text-color: #e6e7eb;
+  --text-dim: #8b8f9c;
+  --border-color: #2b2e38;
+  --success: #22c55e;
+  --warn: #eab308;
+  --danger: #ef4444;
+  --accent-text: #ffffff;
+  --accent-soft: rgba(99, 102, 241, 0.22);
+  --accent-hover: rgba(99, 102, 241, 0.32);
+  --accent-focus: rgba(99, 102, 241, 0.35);
+  --success-soft: rgba(34, 197, 94, 0.2);
+  --warn-soft: rgba(234, 179, 8, 0.2);
+  --danger-soft: rgba(239, 68, 68, 0.2);
+  --radius: 8px;
+  --theme-mode: "dark";
+}
+html { font-size: 14px; }
+html, body { background: var(--bg-app); }

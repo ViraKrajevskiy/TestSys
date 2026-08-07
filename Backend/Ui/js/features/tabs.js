@@ -4,10 +4,15 @@ window.App = window.App || {};
   const { state } = App;
 
   App.createTab = function (overrides) {
+    // Первая (стартовая) вкладка получает демо-URL — чтобы пользователь
+    // сразу видел, как выглядит запрос. Все последующие — пустые,
+    // как в Postman/Insomnia: иначе одинаковый URL в двух вкладках
+    // выглядит как «одна и та же вкладка».
+    const isFirstTab = state.tabs.length === 0;
     const tab = {
       id: state.nextId++,
       method: "GET",
-      url: "https://jsonplaceholder.typicode.com/users",
+      url: isFirstTab ? "https://jsonplaceholder.typicode.com/users" : "",
       params: [],
       headers: [{ key: "Content-Type", value: "application/json" }],
       body: "",

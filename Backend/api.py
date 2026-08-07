@@ -37,6 +37,104 @@ INDEX_HTML = os.path.join(BASE_DIR, "Ui", "index.html")
 MAIN_WINDOW_TITLE = "TestSys"
 API_BASE_URL = "http://127.0.0.1:8000"
 
+# Boot-CSS темы. Лежит рядом с остальными стилями и подключается в <head>,
+# поэтому применяется синхронно — до первой отрисовки. localStorage для
+# этого не годится: pywebview не сохраняет его между запусками.
+THEME_BOOT_CSS = os.path.join(BASE_DIR, "Ui", "css", "theme-boot.css")
+
+
+def _luma(hex_color, fallback=0):
+    """Яркость цвета 0..255 по формуле ITU-R BT.601."""
+    try:
+        c = str(hex_color or "").lstrip("#")
+        if len(c) == 3:
+            c = "".join(ch * 2 for ch in c)
+        r, g, b = int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+        return (r * 299 + g * 587 + b * 114) / 1000
+    except Exception:
+        return fallback
+
+
+def _rgba(hex_color, alpha):
+    try:
+        c = str(hex_color or "").lstrip("#")
+        if len(c) == 3:
+            c = "".join(ch * 2 for ch in c)
+        r, g, b = int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+        return f"rgba({r}, {g}, {b}, {alpha})"
+    except Exception:
+        return f"rgba(0, 0, 0, {alpha})"
+
+
+def write_theme_boot_css(theme_json):
+    """
+    Генерирует Ui/css/theme-boot.css из темы. Файл подключён в index.html,
+    браузер применяет его синхронно — флеша дефолтной темы не бывает.
+    """
+    try:
+        t = json.loads(theme_json) if isinstance(theme_json, str) else (theme_json or {})
+        if not isinstance(t, dict) or not t:
+            return False
+
+        accent = t.get("accent", "#6366f1")
+        bg_app = t.get("bgApp", "#14151a")
+        accent_text = "#1a1a1a" if _luma(accent) > 150 else "#ffffff"
+        is_light = _luma(bg_app) > 128
+
+        pairs = [
+            ("--accent", accent),
+            ("--bg-app", bg_app),
+            ("--bg-panel", t.get("bgPanel")),
+            ("--bg-input", t.get("bgInput")),
+            ("--text-main", t.get("textMain")),
+            ("--text-color", t.get("textMain")),
+            ("--text-dim", t.get("textDim")),
+            ("--border-color", t.get("borderColor")),
+            ("--success", t.get("success")),
+            ("--warn", t.get("warn")),
+            ("--danger", t.get("danger")),
+            ("--accent-text", accent_text),
+            # 0.12 давало ~9 единиц RGB разницы поверх bg-panel —
+            # человек эту разницу не видит. 0.22 = ~16 единиц, читается.
+            ("--accent-soft", _rgba(accent, 0.22)),
+            # Более насыщенный оттенок для активных состояний
+            ("--accent-hover", _rgba(accent, 0.32)),
+            ("--accent-focus", _rgba(accent, 0.35)),
+            ("--success-soft", _rgba(t.get("success", "#22c55e"), 0.20)),
+            ("--warn-soft", _rgba(t.get("warn", "#eab308"), 0.20)),
+            ("--danger-soft", _rgba(t.get("danger", "#ef4444"), 0.20)),
+        ]
+        lines = [f"  {k}: {v};" for k, v in pairs if v]
+
+        radius = t.get("borderRadius")
+        if radius is not None:
+            lines.append(f"  --radius: {int(radius)}px;")
+
+        # Маркер режима — инлайн-скрипт в <head> прочитает его из CSS и
+        # выставит data-bs-theme. Патчить сам index.html нельзя: перезапись
+        # файла перед открытием окна ломает привязку js_api.
+        lines.append(f'  --theme-mode: "{"light" if is_light else "dark"}";')
+
+        css = ["/* Автогенерируется api.py при сохранении темы. Не редактировать. */",
+               ":root {", *lines, "}"]
+
+        font_size = t.get("fontSize")
+        if font_size:
+            css.append(f"html {{ font-size: {int(font_size)}px; }}")
+        # Фон ставим сразу — иначе между применением :root и отрисовкой
+        # body мелькает белый фон окна.
+        css.append("html, body { background: var(--bg-app); }")
+
+        os.makedirs(os.path.dirname(THEME_BOOT_CSS), exist_ok=True)
+        tmp = THEME_BOOT_CSS + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write("\n".join(css) + "\n")
+        os.replace(tmp, THEME_BOOT_CSS)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to write theme boot CSS: {e}")
+        return False
+
 # ============================================================
 # LOGGING SETUP
 # ============================================================
@@ -1713,11 +1811,52 @@ class Api:
 
     # ========== COLLECTIONS ==========
     def save_collections(self, collections_json):
-        """Сохраняет пользовательские коллекции."""
+        """
+        Сохраняет пользовательские коллекции.
+
+        Запись атомарная (temp + os.replace) и с бэкапом: обрыв процесса
+        посреди записи больше не оставляет обрезанный файл. Плюс защита от
+        затирания непустых коллекций пустыми — фронтенд мог не успеть
+        загрузиться и прислать [].
+        """
+        path = os.path.join(USER_DATA_DIR, "collections.json")
+        bak = path + ".bak"
         try:
-            path = os.path.join(USER_DATA_DIR, "collections.json")
-            with open(path, "w", encoding="utf-8") as f:
+            # Санити-чек: не даём пустому списку затереть непустой файл
+            try:
+                incoming = json.loads(collections_json)
+                new_cols = incoming.get("collections", []) if isinstance(incoming, dict) else incoming
+                if isinstance(new_cols, list) and len(new_cols) == 0 and os.path.exists(path):
+                    with open(path, "r", encoding="utf-8") as f:
+                        old = json.loads(f.read() or "{}")
+                    old_cols = old.get("collections", []) if isinstance(old, dict) else old
+                    if isinstance(old_cols, list) and len(old_cols) > 0:
+                        logger.warning(
+                            "Refused to overwrite %d collections with an empty list",
+                            len(old_cols))
+                        return False
+            except Exception:
+                pass  # проверка не удалась — не блокируем сохранение
+
+            # Бэкап текущего файла перед перезаписью
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as src:
+                        data = src.read()
+                    if data.strip():
+                        with open(bak, "w", encoding="utf-8") as dst:
+                            dst.write(data)
+                except Exception as e:
+                    logger.warning(f"Collections backup failed: {e}")
+
+            # Атомарная запись
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
                 f.write(collections_json)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+
             logger.info("Collections saved")
             return True
         except Exception as e:
@@ -1725,14 +1864,40 @@ class Api:
             return False
 
     def load_collections(self):
-        """Загружает коллекции из collections.json."""
+        """
+        Загружает коллекции. При повреждённом файле пробует .bak —
+        лучше вернуться на одно сохранение назад, чем потерять всё.
+        """
         path = os.path.join(USER_DATA_DIR, "collections.json")
-        if os.path.exists(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    return f.read()
-            except Exception:
+
+        def _read_valid(p):
+            if not os.path.exists(p):
                 return None
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    raw = f.read()
+                if not raw.strip():
+                    return None
+                json.loads(raw)   # проверяем, что это валидный JSON
+                return raw
+            except Exception as e:
+                logger.warning(f"Collections file unreadable ({p}): {e}")
+                return None
+
+        raw = _read_valid(path)
+        if raw is not None:
+            return raw
+
+        raw = _read_valid(path + ".bak")
+        if raw is not None:
+            logger.warning("Restored collections from backup")
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(raw)
+            except Exception:
+                pass
+            return raw
+
         return None
 
     # ========== GIT-FRIENDLY FOLDER SYNC ==========
@@ -1831,11 +1996,12 @@ class Api:
 
     # ========== THEME (existing) ==========
     def save_theme(self, theme_json):
-        """Сохраняет тему в файл theme.json рядом с main.py / exe."""
+        """Сохраняет тему в theme.json и генерирует boot-CSS."""
         try:
             path = os.path.join(USER_DATA_DIR, "theme.json")
             with open(path, "w", encoding="utf-8") as f:
                 f.write(theme_json)
+            write_theme_boot_css(theme_json)
             logger.info("Theme saved")
             return True
         except Exception as e:

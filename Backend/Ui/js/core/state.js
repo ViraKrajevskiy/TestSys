@@ -194,7 +194,18 @@ App.deleteRequest = function (folder, itemIdx) {
 let _syncPushTimer = null;
 let _gitSyncTimer  = null;
 
+// Пока коллекции не загружены с диска, USER_COLLECTIONS = [] — и любое
+// сохранение затрёт файл пустотой. Поэтому save до окончания загрузки
+// запрещён. Взводится в loadCollections().
+let _collectionsLoaded = false;
+App.markCollectionsLoaded = function () { _collectionsLoaded = true; };
+App.areCollectionsLoaded  = function () { return _collectionsLoaded; };
+
 App.saveCollections = async function () {
+  if (!_collectionsLoaded) {
+    console.warn("[Collections] save пропущен — данные ещё не загружены");
+    return;
+  }
   if (window.pywebview && window.pywebview.api) {
     try {
       // Сохраняем коллекции ВМЕСТЕ с переменными — раньше переменные жили
@@ -232,19 +243,30 @@ App.saveCollections = async function () {
 };
 
 App.loadCollections = async function () {
-  // Wait for pywebview API (same pattern as settings/theme)
-  const api = await new Promise((resolve) => {
-    if (window.pywebview && window.pywebview.api) return resolve(window.pywebview.api);
-    const start = Date.now();
-    const iv = setInterval(() => {
-      if (window.pywebview && window.pywebview.api) { clearInterval(iv); resolve(window.pywebview.api); }
-      else if (Date.now() - start > 3000) { clearInterval(iv); resolve(null); }
-    }, 100);
-  });
-  if (!api) return;
+  // Ждём КОНКРЕТНЫЙ метод, а не объект api: pywebview создаёт api раньше,
+  // чем прикрепляет методы — из-за этого load_collections «не существовал»,
+  // load падал, и коллекции выглядели пустыми/повреждёнными.
+  const api = await App.waitForApi("load_collections");
+
+  if (!api) {
+    // API так и не появился. Флаг НЕ взводим — save остаётся заблокирован,
+    // иначе перезапишем файл пустотой.
+    console.error("[Collections] pywebview API недоступен — сохранение отключено");
+    App.logError && App.logError("Collections",
+      "Не удалось загрузить коллекции: API недоступен. Изменения не сохраняются.");
+    return;
+  }
+
   try {
     const raw = await api.load_collections();
-    if (!raw) return;
+
+    if (!raw) {
+      // Файла нет — это первый запуск. Пустой список здесь корректен,
+      // сохранение разрешаем.
+      _collectionsLoaded = true;
+      return;
+    }
+
     const data = JSON.parse(raw);
 
     if (Array.isArray(data)) {
@@ -258,10 +280,21 @@ App.loadCollections = async function () {
         App.VARIABLES = Object.assign({}, App.VARIABLES, data.variables);
       }
     } else {
+      // Формат не распознан — не трогаем файл, лучше показать пусто,
+      // чем затереть чужие данные.
+      console.error("[Collections] неизвестный формат файла — сохранение отключено");
       return;
     }
+
     App.USER_COLLECTIONS.forEach(c => { c.builtin = false; c.folders = c.folders || []; });
-  } catch (e) { console.warn("[Collections] load error:", e); }
+    _collectionsLoaded = true;
+  } catch (e) {
+    // Битый JSON — сохранение оставляем заблокированным, чтобы не добить файл.
+    console.error("[Collections] load error:", e);
+    App.logError && App.logError("Collections",
+      "Файл коллекций повреждён. Сохранение отключено, чтобы не потерять данные. " +
+      "Резервная копия: collections.json.bak");
+  }
 };
 
 // ============================================================
