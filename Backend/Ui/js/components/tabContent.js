@@ -958,9 +958,40 @@ window.App = window.App || {};
       pre.textContent = JSON.stringify(tab.response.headers, null, 2);
       bodyEl.appendChild(pre);
     } else {
+      let responseText = tab.response.text || "";
+
+      // HTML-страница вместо API-ответа — почти всегда значит, что запрос
+      // ушёл не туда (не тот порт/путь). Простыня HTML это скрывает,
+      // поэтому показываем краткую суть, а сырой HTML прячем под спойлер.
+      const htmlInfo = _sniffHtmlError(responseText, tab.response);
+      if (htmlInfo) {
+        const box = document.createElement("div");
+        box.className = "resp-html-hint";
+        box.innerHTML = `
+          <div class="rhh-title"><i class="bi bi-exclamation-triangle"></i> ${App.escapeHtml(htmlInfo.title)}</div>
+          <div class="rhh-desc">${App.escapeHtml(htmlInfo.hint)}</div>
+          <button class="rhh-toggle" type="button">
+            <i class="bi bi-chevron-down"></i> ${App.t("showRawHtml") || "Показать HTML-ответ"}
+          </button>
+          <pre class="response-pre rhh-raw" style="display:none;margin-top:8px;"></pre>`;
+        const raw = box.querySelector(".rhh-raw");
+        raw.textContent = responseText.length > App.LIMITS.MAX_RESPONSE_DISPLAY
+          ? responseText.substring(0, App.LIMITS.MAX_RESPONSE_DISPLAY) + "\n\n... [обрезано]"
+          : responseText;
+        const btn = box.querySelector(".rhh-toggle");
+        btn.addEventListener("click", () => {
+          const open = raw.style.display !== "none";
+          raw.style.display = open ? "none" : "";
+          btn.innerHTML = `<i class="bi bi-chevron-${open ? "down" : "up"}"></i> ` +
+            (open ? (App.t("showRawHtml") || "Показать HTML-ответ")
+                  : (App.t("hideRawHtml") || "Скрыть HTML-ответ"));
+        });
+        bodyEl.appendChild(box);
+        return;
+      }
+
       const pre = document.createElement("pre");
       pre.className = "response-pre";
-      let responseText = tab.response.text || "";
       if (responseText.length > App.LIMITS.MAX_RESPONSE_DISPLAY) {
         responseText = responseText.substring(0, App.LIMITS.MAX_RESPONSE_DISPLAY);
         pre.textContent = App.formatJson(responseText) + "\n\n... [обрезано: ответ больше " + (App.LIMITS.MAX_RESPONSE_DISPLAY / 1000000).toFixed(0) + " МБ]";
@@ -970,6 +1001,36 @@ window.App = window.App || {};
       bodyEl.appendChild(pre);
     }
   };
+
+  /**
+   * Ответ — HTML-страница, а не API-данные? Достаём <title> и объясняем,
+   * что скорее всего пошло не так. null — если это нормальный ответ.
+   */
+  function _sniffHtmlError(text, response) {
+    const s = (text || "").trimStart();
+    if (!/^<(!doctype|html)/i.test(s)) return null;
+
+    const code = response.status_code;
+    const m = s.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = m ? m[1].replace(/\s+/g, " ").trim() : "";
+
+    let hint;
+    if (code === 404) {
+      hint = "Сервер ответил HTML-страницей 404 — такого пути на нём нет. " +
+             "Проверьте порт и путь в URL: обычно это не тот сервер " +
+             "(например, фронтенд вместо API) или опечатка в эндпоинте.";
+    } else if (code >= 500) {
+      hint = "Сервер вернул HTML-страницу с ошибкой. Подробности — в HTML ниже " +
+             "или в логах самого сервера.";
+    } else if (code === 401 || code === 403) {
+      hint = "Сервер вернул HTML-страницу входа вместо данных. " +
+             "Скорее всего не передан токен или он истёк.";
+    } else {
+      hint = "Сервер вернул HTML вместо JSON. Убедитесь, что URL указывает " +
+             "на API-эндпоинт, а не на веб-страницу.";
+    }
+    return { title: title || `HTML-ответ (${code})`, hint };
+  }
 
   // Drag & drop файлов из ОС. Пути приходят из pywebview
   // (main.py → window.evaluate_js), потому что в JS у File.path нет

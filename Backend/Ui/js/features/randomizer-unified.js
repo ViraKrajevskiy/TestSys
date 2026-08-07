@@ -27,9 +27,13 @@ const UnifiedRandomizer = (() => {
   let _openOptsIdx = -1;      // у какого поля раскрыты настройки
   let schemaFields = null;    // {path: meta} из Swagger, если запрос импортирован
 
-  // ── Пользовательские шаблоны (localStorage) ───────────────────
-  const _CTL_KEY = "ur.customTemplates";   // localStorage key
+  // ── Пользовательские шаблоны ──────────────────────────────────
+  // Два слоя: localStorage — мгновенное чтение при старте;
+  // Python (rand_templates.json) — авторитетное хранилище, переживает
+  // перезапуск приложения (pywebview не всегда персистит localStorage).
+  const _CTL_KEY = "ur.customTemplates";
   let _customTemplates = {};               // { id: { label, data } }
+  let _tplLoadedFromDisk = false;
 
   function _loadCustomTpl() {
     try {
@@ -37,8 +41,48 @@ const UnifiedRandomizer = (() => {
       _customTemplates = raw ? JSON.parse(raw) : {};
     } catch (_) { _customTemplates = {}; }
   }
+
+  /** Догружаем с диска через Python — источник истины. */
+  async function _loadCustomTplFromDisk() {
+    if (_tplLoadedFromDisk) return;
+    try {
+      const api = await _waitForApi(3000);
+      if (!api || !api.load_rand_templates) return;
+      const raw = await api.load_rand_templates();
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          _customTemplates = parsed;
+          try { localStorage.setItem(_CTL_KEY, JSON.stringify(parsed)); } catch (_) {}
+          _renderCustomTpls();
+        }
+      }
+      _tplLoadedFromDisk = true;
+    } catch (e) { console.warn("[Randomizer] load templates:", e); }
+  }
+
+  function _waitForApi(timeout) {
+    return new Promise(resolve => {
+      if (window.pywebview && window.pywebview.api) return resolve(window.pywebview.api);
+      const start = Date.now();
+      const iv = setInterval(() => {
+        if (window.pywebview && window.pywebview.api) { clearInterval(iv); resolve(window.pywebview.api); }
+        else if (Date.now() - start > timeout) { clearInterval(iv); resolve(null); }
+      }, 100);
+    });
+  }
+
   function _saveCustomTpl() {
+    // Синхронно в localStorage — чтобы UI не ждал
     try { localStorage.setItem(_CTL_KEY, JSON.stringify(_customTemplates)); } catch (_) {}
+    // И на диск через Python — переживёт перезапуск
+    try {
+      const api = window.pywebview && window.pywebview.api;
+      if (api && api.save_rand_templates) {
+        api.save_rand_templates(JSON.stringify(_customTemplates))
+          .catch(e => console.warn("[Randomizer] save templates:", e));
+      }
+    } catch (_) {}
   }
   function _renderCustomTpls() {
     const list = document.querySelector(".ur-root #ur-custom-tpl-list");
@@ -769,8 +813,9 @@ const UnifiedRandomizer = (() => {
     });
 
     // ── Пользовательские шаблоны ────────────────────────────────
-    _loadCustomTpl();
+    _loadCustomTpl();          // мгновенно из localStorage
     _renderCustomTpls();
+    _loadCustomTplFromDisk();  // и догружаем с диска (async, перерисует сам)
 
     const saveTplBtn  = document.getElementById("ur-save-tpl");
     const saveTplForm = document.getElementById("ur-save-tpl-form");

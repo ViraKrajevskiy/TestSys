@@ -1853,6 +1853,31 @@ class Api:
                 return None
         return None
 
+    # ========== RANDOMIZER TEMPLATES ==========
+    def save_rand_templates(self, templates_json):
+        """Сохраняет пользовательские шаблоны рандомайзера в rand_templates.json."""
+        try:
+            path = os.path.join(USER_DATA_DIR, "rand_templates.json")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(templates_json)
+            logger.info("Randomizer templates saved")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save randomizer templates: {e}")
+            return False
+
+    def load_rand_templates(self):
+        """Загружает пользовательские шаблоны рандомайзера."""
+        path = os.path.join(USER_DATA_DIR, "rand_templates.json")
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return f.read()
+            except Exception as e:
+                logger.error(f"Failed to load randomizer templates: {e}")
+                return None
+        return None
+
     # ========== USERS CRUD (existing) ==========
     def get_users(self, skip=0, limit=10):
         """Получить список всех пользователей."""

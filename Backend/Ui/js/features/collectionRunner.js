@@ -12,17 +12,18 @@ window.App = window.App || {};
   // ── run logic ─────────────────────────────────────────────────────────────
 
   async function _runCollection(colIdx, opts, onResult) {
-    const col = App.state.collections[colIdx];
+    const col = (App.COLLECTIONS || [])[colIdx];
     if (!col) return;
 
     const resolve = App.resolveAll || App.resolveVariables || (s => s);
     const pick = App.activeRows || (rows => (rows || []).filter(r => (r.key || "").trim()));
 
-    // Flatten all requests (folders + root)
+    // Flatten all requests. Структура: col.folders[].items[]
+    // (поддерживаем и старые поля requests/ items на корне — на всякий случай)
     const allReqs = [];
-    (col.requests || []).forEach(r => allReqs.push({ req: r, folder: null }));
+    (col.items || col.requests || []).forEach(r => allReqs.push({ req: r, folder: null }));
     (col.folders || []).forEach(f => {
-      (f.requests || []).forEach(r => allReqs.push({ req: r, folder: f.name }));
+      (f.items || f.requests || []).forEach(r => allReqs.push({ req: r, folder: f.name }));
     });
 
     const delay = opts.delay || 0;
@@ -35,19 +36,47 @@ window.App = window.App || {};
         continue;
       }
 
-      const finalUrl = resolve(req.url).trim();
-      const finalBody = req.body ? resolve(req.body) : "";
+      // Рабочая копия — pre-скрипт может менять url/body/headers,
+      // но исходный запрос в коллекции трогать нельзя.
+      const work = {
+        method: req.method || "GET",
+        url: req.url,
+        body: req.body || "",
+        headers: Array.isArray(req.headers) ? req.headers.map(h => ({ ...h })) : [],
+        params:  Array.isArray(req.params)  ? req.params.map(p => ({ ...p }))  : [],
+      };
+
+      // Pre-request скрипт — до резолва переменных, чтобы он мог их задать
+      if (req.preScript && req.preScript.trim() && App.runScript) {
+        try { App.runScript(req.preScript, { source: "pre", tab: work }); }
+        catch (_) { /* ошибка скрипта не должна ронять весь прогон */ }
+      }
+
+      const finalUrl = resolve(work.url).trim();
+      const finalBody = work.body ? resolve(work.body) : "";
+
+      // Проверяем схему — иначе бэк отдаёт невнятное
+      // "No connection adapters were found"
+      if (!/^https?:\/\//i.test(finalUrl)) {
+        onResult({
+          req, folder, elapsed: 0,
+          response: { ok: false, error: `Некорректный URL: ${finalUrl}` },
+        });
+        if (delay > 0 && i < allReqs.length - 1) await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+
       const headersObj = {};
-      pick(req.headers).forEach(h => { headersObj[resolve(h.key).trim()] = resolve(h.value); });
+      pick(work.headers).forEach(h => { headersObj[resolve(h.key).trim()] = resolve(h.value); });
       const paramsObj = {};
-      pick(req.params).forEach(p => { paramsObj[resolve(p.key).trim()] = resolve(p.value); });
+      pick(work.params).forEach(p => { paramsObj[resolve(p.key).trim()] = resolve(p.value); });
 
       let response = null;
       let testResult = null;
       const t0 = Date.now();
       try {
         response = await window.pywebview.api.send_request(
-          req.method || "GET", finalUrl, headersObj, paramsObj,
+          work.method, finalUrl, headersObj, paramsObj,
           finalBody.trim() || null
         );
       } catch (e) {
@@ -55,11 +84,17 @@ window.App = window.App || {};
       }
       const elapsed = Date.now() - t0;
 
-      // run test script if present
-      if (req.testScript && response && App.runScript) {
-        // Create a fake tab-like object
-        const fakeTab = { ...req, response, lastTests: null };
-        testResult = App.runScript(req.testScript, { source: "test", tab: fakeTab, response });
+      // Test-скрипт после ответа
+      if (req.testScript && req.testScript.trim() && response && App.runScript) {
+        try {
+          testResult = App.runScript(req.testScript, {
+            source: "test",
+            tab: Object.assign({}, work, { response }),
+            response,
+          });
+        } catch (e) {
+          testResult = { ok: false, tests: [], error: String(e) };
+        }
       }
 
       onResult({ req, folder, response, testResult, elapsed });
@@ -79,9 +114,11 @@ window.App = window.App || {};
     modal.id = "runner-modal";
     modal.className = "app-modal-backdrop";
 
-    const colOptions = (App.state.collections || [])
-      .map((c, i) => `<option value="${i}">${App.escapeHtml(c.name)}</option>`)
-      .join("");
+    const collections = Array.isArray(App.COLLECTIONS) ? App.COLLECTIONS : [];
+    const hasCollections = collections.length > 0;
+    const colOptions = hasCollections
+      ? collections.map((c, i) => `<option value="${i}">${App.escapeHtml(c.name || "Коллекция " + (i+1))}</option>`).join("")
+      : `<option value="" disabled>— нет коллекций —</option>`;
 
     modal.innerHTML = `
       <div class="app-modal" style="max-width:720px;width:96%;max-height:90vh;display:flex;flex-direction:column;">
@@ -90,8 +127,14 @@ window.App = window.App || {};
           <button class="app-modal-close" id="runner-close">&times;</button>
         </div>
         <div class="app-modal-body" style="flex:1;overflow:auto;display:flex;flex-direction:column;gap:12px;">
+          ${!hasCollections ? `
+          <div style="padding:24px;text-align:center;color:var(--text-dim);">
+            <i class="bi bi-collection" style="font-size:32px;display:block;margin-bottom:8px;"></i>
+            Нет коллекций для запуска.<br>
+            <span style="font-size:12px;">Создайте коллекцию и добавьте в неё запросы.</span>
+          </div>` : ""}
           <!-- config row -->
-          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;${!hasCollections ? "display:none;" : ""}">
             <select id="runner-col-select" class="form-select form-select-sm" style="flex:1;min-width:160px;">
               ${colOptions}
             </select>
@@ -100,7 +143,7 @@ window.App = window.App || {};
               <input type="number" id="runner-delay" value="0" min="0" max="10000" step="100"
                 class="form-control form-control-sm" style="width:80px;">
             </label>
-            <button id="runner-start" class="btn send-btn btn-sm">
+            <button id="runner-start" class="btn send-btn btn-sm" ${!hasCollections ? "disabled" : ""}>
               <i class="bi bi-play-fill"></i> Запустить
             </button>
             <button id="runner-stop" class="btn btn-sm btn-danger" style="display:none;">
@@ -142,14 +185,14 @@ window.App = window.App || {};
       _running = true;
       _abort = false;
 
-      const colIdx  = parseInt(modal.querySelector("#runner-col-select").value);
-      const delay   = parseInt(modal.querySelector("#runner-delay").value) || 0;
-      const col     = App.state.collections[colIdx];
-      if (!col) { _running = false; return; }
+      const colIdx  = parseInt(modal.querySelector("#runner-col-select")?.value);
+      const delay   = parseInt(modal.querySelector("#runner-delay")?.value) || 0;
+      const col     = (App.COLLECTIONS || [])[colIdx];
+      if (!col || isNaN(colIdx)) { _running = false; return; }
 
-      // count total
-      const total = (col.requests || []).length +
-        (col.folders || []).reduce((s, f) => s + (f.requests || []).length, 0);
+      // count total — структура col.folders[].items[]
+      const total = (col.items || col.requests || []).length +
+        (col.folders || []).reduce((s, f) => s + (f.items || f.requests || []).length, 0);
 
       startBtn.style.display = "none";
       stopBtn.style.display  = "";

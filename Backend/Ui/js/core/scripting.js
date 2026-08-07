@@ -312,8 +312,41 @@ window.App = window.App || {};
    * Запустить скрипт в изолированном окружении.
    * @returns {ok, error, tests, elapsed}
    */
+  /**
+   * Частая ошибка: в поле скрипта вставляют cURL или сырой HTTP-запрос.
+   * Движок падает с невнятным "Unexpected identifier 'POST'" — ловим это
+   * заранее и объясняем, что делать.
+   */
+  function _detectNotJs(code) {
+    const s = code.trim();
+    if (/^\s*curl\s+/i.test(s)) {
+      return "Похоже, вы вставили команду cURL, а не JavaScript.\n\n" +
+             "Импортировать cURL нужно кнопкой «Импорт cURL» (значок </> рядом с URL), " +
+             "а это поле — для JS-кода вида pm.variables.set(...).";
+    }
+    // Сырой HTTP: "POST /path HTTP/1.1" или "POST https://..."
+    if (/^\s*(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(\/|https?:\/\/)/i.test(s)) {
+      return "Похоже, вы вставили сырой HTTP-запрос, а не JavaScript.\n\n" +
+             "Метод и URL задаются в полях сверху, а это поле — для JS-кода " +
+             "вида pm.variables.set(\"token\", ...).";
+    }
+    // Заголовки в начале: "Content-Type: application/json"
+    if (/^\s*[A-Za-z-]+:\s*\S+/.test(s) && !/[;={}()]/.test(s.split("\n")[0])) {
+      return "Похоже, вы вставили HTTP-заголовки, а не JavaScript.\n\n" +
+             "Заголовки задаются на вкладке «Заголовки», а это поле — для JS-кода.";
+    }
+    return null;
+  }
+
   App.runScript = function (code, opts) {
     if (!code || !code.trim()) return { ok: true, tests: [], elapsed: 0 };
+
+    // Ранняя диагностика — понятное сообщение вместо ошибки парсера
+    const notJs = _detectNotJs(code);
+    if (notJs) {
+      _log("error", (opts && opts.source) || "script", [notJs]);
+      return { ok: false, tests: [], error: notJs, elapsed: 0 };
+    }
 
     const tests = [];
     const pm = _makePm(Object.assign({ tests }, opts || {}));
