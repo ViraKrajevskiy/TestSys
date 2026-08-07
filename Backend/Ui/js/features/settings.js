@@ -167,8 +167,8 @@ window.App = window.App || {};
               <div class="mb-2">
                 <label class="form-label" style="font-size:12px;" data-i18n="interfaceLanguage">Язык интерфейса</label>
                 <select class="form-select form-select-sm" id="set-language">
-                  <option value="ru">Русский</option>
-                  <option value="en">English</option>
+                  ${(App.LANGUAGES || [{value:"ru",label:"Русский"},{value:"en",label:"English"}])
+                    .map(l => `<option value="${l.value}">${l.label}</option>`).join("")}
                 </select>
               </div>
             </div>
@@ -328,6 +328,37 @@ window.App = window.App || {};
 
             <hr style="border-color:var(--border-color);">
 
+            <!-- GIT / SHARED FOLDER -->
+            <div class="mb-3">
+              <h6 style="color:var(--accent);font-size:13px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">
+                <i class="bi bi-git me-1"></i> <span data-i18n="gitFolderTitle">Git / Shared folder</span>
+              </h6>
+              <div class="form-text" style="font-size:11px;margin-bottom:8px;" data-i18n="gitFolderDesc">
+                Каждая коллекция сохраняется как отдельный .json файл — удобно трекать в git или шарить через Dropbox/OneDrive
+              </div>
+              <div class="d-flex gap-2 align-items-center mb-2">
+                <input type="text" class="form-control form-control-sm" id="set-git-dir" placeholder="/path/to/repo/api" style="font-family:monospace;font-size:11px;" readonly>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="set-git-dir-browse" data-i18n="gitFolderBrowse">Обзор…</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="set-git-dir-clear" title="${App.t('gitFolderClear')}"><i class="bi bi-x"></i></button>
+              </div>
+              <div class="d-flex gap-2 align-items-center mb-2">
+                <div class="form-check form-switch mb-0">
+                  <input class="form-check-input" type="checkbox" id="set-git-autosync">
+                  <label class="form-check-label" for="set-git-autosync" style="font-size:12px;" data-i18n="gitFolderAutoSync">Авто-синхронизация при сохранении</label>
+                </div>
+              </div>
+              <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="set-git-export">
+                  <i class="bi bi-box-arrow-up me-1"></i><span data-i18n="gitFolderExport">Экспортировать в папку</span>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="set-git-import">
+                  <i class="bi bi-box-arrow-in-down me-1"></i><span data-i18n="gitFolderImport">Импортировать из папки</span>
+                </button>
+              </div>
+            </div>
+
+            <hr style="border-color:var(--border-color);">
+
             <!-- HOTKEYS -->
             <div class="mb-3">
               <h6 style="color:var(--accent);font-size:13px;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
@@ -399,6 +430,68 @@ window.App = window.App || {};
     document.getElementById("set-reset-btn").addEventListener("click", () => {
       fillForm(DEFAULTS);
     });
+
+    // ---- Git / Shared folder ----
+    (async () => {
+      const inp = document.getElementById("set-git-dir");
+      const chk = document.getElementById("set-git-autosync");
+      // Load saved path
+      if (window.pywebview?.api?.get_git_dir_setting) {
+        const r = await window.pywebview.api.get_git_dir_setting();
+        if (r.ok && r.path) inp.value = r.path;
+      }
+      // Load auto-sync setting
+      chk.checked = !!(App.getSetting && App.getSetting("gitAutoSync"));
+
+      document.getElementById("set-git-dir-browse").addEventListener("click", async () => {
+        const r = await window.pywebview?.api?.pick_git_dir();
+        if (r?.ok && r.path) {
+          inp.value = r.path;
+          await window.pywebview.api.save_git_dir_setting(r.path);
+        }
+      });
+
+      document.getElementById("set-git-dir-clear").addEventListener("click", async () => {
+        inp.value = "";
+        await window.pywebview?.api?.save_git_dir_setting("");
+      });
+
+      document.getElementById("set-git-autosync").addEventListener("change", () => {
+        App.saveSetting && App.saveSetting("gitAutoSync", chk.checked);
+      });
+
+      document.getElementById("set-git-export").addEventListener("click", async () => {
+        const dir = inp.value.trim();
+        if (!dir) { App.showAlert(App.t("gitFolderNoPath")); return; }
+        if (!App.USER_COLLECTIONS.length) { App.showAlert(App.t("none")); return; }
+        const json = JSON.stringify(App.USER_COLLECTIONS);
+        const r = await window.pywebview?.api?.export_git_dir(dir, json);
+        if (r?.ok) App.showAlert(`✓ ${App.t("gitFolderExported")}: ${r.count}`);
+        else App.showAlert(App.t("error") + ": " + (r?.error || "?"));
+      });
+
+      document.getElementById("set-git-import").addEventListener("click", async () => {
+        const dir = inp.value.trim();
+        if (!dir) { App.showAlert(App.t("gitFolderNoPath")); return; }
+        const r = await window.pywebview?.api?.import_git_dir(dir);
+        if (!r?.ok) { App.showAlert(App.t("error") + ": " + r?.error); return; }
+        // Merge: add collections not already present by name
+        const existing = new Set(App.USER_COLLECTIONS.map(c => c.name));
+        let added = 0;
+        (r.collections || []).forEach(col => {
+          if (col && col.name && !existing.has(col.name)) {
+            App.USER_COLLECTIONS.push({ name: col.name, builtin: false, folders: col.folders || [] });
+            added++;
+          }
+        });
+        if (added > 0) {
+          App.saveCollections();
+          App.renderCollections();
+        }
+        App.showAlert(`✓ ${App.t("gitFolderImported")}: ${added}`);
+        if (r.errors?.length) console.warn("Git import errors:", r.errors);
+      });
+    })();
 
     // Очистка логов прямо из настроек
     document.getElementById("settings-clear-log").addEventListener("click", async () => {

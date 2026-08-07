@@ -1,4 +1,4 @@
-﻿"""
+"""
 api.py — UPDATED
 Добавлены методы для Data Generator с логированием в файл.
 """
@@ -497,6 +497,39 @@ class Api:
             return {"success": False, "error": str(e)}
 
     # ========== HTTP REQUESTS (existing) ==========
+    # ========== COOKIE MANAGEMENT ==========
+    def get_cookies(self):
+        """Возвращает куки из сессии сгруппированные по домену."""
+        try:
+            from network import get_cookies_by_domain
+            return {"ok": True, "cookies": get_cookies_by_domain()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def set_cookie(self, domain, name, value, path="/"):
+        try:
+            from network import set_cookie
+            set_cookie(domain, name, value, path)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def delete_cookie(self, domain, name):
+        try:
+            from network import delete_cookie
+            delete_cookie(domain, name)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def clear_cookies(self):
+        try:
+            from network import clear_all_cookies
+            clear_all_cookies()
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def send_request(self, method, url, headers, params, body,
                      files=None, form_fields=None):
         """Отправка HTTP-запроса. Вызывается из app.js.
@@ -1701,6 +1734,100 @@ class Api:
             except Exception:
                 return None
         return None
+
+    # ========== GIT-FRIENDLY FOLDER SYNC ==========
+
+    def pick_git_dir(self):
+        """Диалог выбора папки для git-friendly синхронизации."""
+        try:
+            win = webview.active_window() or self._find_main_window()
+            if not win:
+                return {"ok": False, "error": "Окно не найдено"}
+            result = win.create_file_dialog(webview.FOLDER_DIALOG)
+            if not result:
+                return {"ok": False, "cancelled": True}
+            path = result[0] if isinstance(result, (list, tuple)) else result
+            return {"ok": True, "path": path}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def export_git_dir(self, dir_path, collections_json):
+        """Записывает каждую коллекцию в отдельный .json файл в папку dir_path.
+        Имя файла = имя коллекции (sanitized) + .json.
+        Возвращает список записанных файлов."""
+        import re, json as _json
+        try:
+            os.makedirs(dir_path, exist_ok=True)
+            collections = _json.loads(collections_json)
+            written = []
+            for col in collections:
+                name = col.get("name", "collection")
+                safe = re.sub(r'[\\/:*?"<>|]', "_", name).strip() or "collection"
+                fpath = os.path.join(dir_path, safe + ".json")
+                with open(fpath, "w", encoding="utf-8") as f:
+                    _json.dump(col, f, ensure_ascii=False, indent=2)
+                written.append(fpath)
+            logger.info(f"Git export: {len(written)} collections → {dir_path}")
+            return {"ok": True, "written": written, "count": len(written)}
+        except Exception as e:
+            logger.error(f"Git export failed: {e}")
+            return {"ok": False, "error": str(e)}
+
+    def import_git_dir(self, dir_path):
+        """Читает все *.json из dir_path и возвращает их как массив коллекций."""
+        import json as _json, glob as _glob
+        try:
+            pattern = os.path.join(dir_path, "*.json")
+            files = sorted(_glob.glob(pattern))
+            collections = []
+            errors = []
+            for fpath in files:
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        data = _json.load(f)
+                    # Принимаем как одну коллекцию или массив коллекций
+                    if isinstance(data, list):
+                        collections.extend(data)
+                    elif isinstance(data, dict) and "name" in data:
+                        collections.append(data)
+                except Exception as e:
+                    errors.append(f"{os.path.basename(fpath)}: {e}")
+            logger.info(f"Git import: {len(collections)} collections from {dir_path}")
+            return {
+                "ok": True,
+                "collections": collections,
+                "count": len(collections),
+                "errors": errors,
+            }
+        except Exception as e:
+            logger.error(f"Git import failed: {e}")
+            return {"ok": False, "error": str(e)}
+
+    def save_git_dir_setting(self, path):
+        """Сохраняет путь к git-папке."""
+        try:
+            cfg_path = os.path.join(USER_DATA_DIR, "git_dir.txt")
+            if path:
+                with open(cfg_path, "w", encoding="utf-8") as f:
+                    f.write(path)
+            else:
+                if os.path.exists(cfg_path):
+                    os.remove(cfg_path)
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def get_git_dir_setting(self):
+        """Возвращает сохранённый путь к git-папке (или None)."""
+        cfg_path = os.path.join(USER_DATA_DIR, "git_dir.txt")
+        if os.path.exists(cfg_path):
+            try:
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    p = f.read().strip()
+                return {"ok": True, "path": p or None}
+            except Exception:
+                pass
+        return {"ok": True, "path": None}
 
     # ========== THEME (existing) ==========
     def save_theme(self, theme_json):

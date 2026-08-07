@@ -254,10 +254,20 @@ window.App = window.App || {};
       serverUrl, useBaseUrlVar: useVar, selected: _selected,
     });
 
+    // Спрашиваем название коллекции — предлагаем имя из спеки как дефолт
+    const suggestedName = res.collection.name || "API Collection";
+    const inputName = await App.showPrompt({
+      title: App.t("importSwagger") || "Импорт Swagger",
+      label: App.t("collectionName") || "Название коллекции",
+      value: suggestedName,
+      placeholder: suggestedName,
+    });
+    if (!inputName) return; // отмена
+
     // Уникальное имя, чтобы не конфликтовать с существующими
     const taken = App.COLLECTIONS.map(c => c.name);
-    let name = res.collection.name, i = 2;
-    while (taken.includes(name)) name = `${res.collection.name} (${i++})`;
+    let name = inputName.trim() || suggestedName, i = 2;
+    while (taken.includes(name)) name = `${inputName.trim()} (${i++})`;
     res.collection.name = name;
 
     App.USER_COLLECTIONS.push(res.collection);

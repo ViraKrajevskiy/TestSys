@@ -32,6 +32,7 @@ window.App = window.App || {};
         <input type="text" class="form-control url-input" id="url-input"
                placeholder="https://api.example.com/endpoint" value="${App.escapeAttr(tab.url)}">
         <button class="dynvar-btn" id="url-dynvar-btn" title="${App.t("dynamicVars")}">{$}</button>
+        <button class="dynvar-btn" id="codegen-btn" title="Генерация кода" style="font-size:12px;font-weight:600;">&lt;/&gt;</button>
         <button class="btn send-btn" id="send-btn" ${tab.sending ? "disabled" : ""}>
           ${tab.sending ? '<span class="spinner-border spinner-border-sm"></span>' : App.t("send")}
         </button>
@@ -101,6 +102,7 @@ window.App = window.App || {};
     });
 
     document.getElementById("send-btn").addEventListener("click", () => App.sendRequest(tab.id));
+    document.getElementById("codegen-btn")?.addEventListener("click", () => App.showCodeGen && App.showCodeGen());
 
     // Справочник динамических переменных для URL
     document.getElementById("url-dynvar-btn")?.addEventListener("click", () => {
@@ -449,20 +451,82 @@ window.App = window.App || {};
   // ============================================================
   // РЕДАКТОР СКРИПТОВ (Pre-request / Tests)
   // ============================================================
+  // ── Сниппеты Pre-request ─────────────────────────────────────────
   const PRE_SNIPPETS = [
-    { label: "Set variable",  code: 'pm.variables.set("myVar", "value");' },
-    { label: "Random data",   code: 'pm.variables.set("nonce", Date.now());\npm.request.body = JSON.stringify({ id: Date.now() });' },
-    { label: "Bearer token",  code: 'pm.request.headers.set("Authorization", "Bearer " + pm.variables.get("token"));' },
-    { label: "Timestamp header", code: 'pm.request.headers.set("X-Timestamp", new Date().toISOString());' },
+    // Авторизация
+    { group: "🔐 Авторизация", label: "Bearer токен из переменной",
+      code: 'pm.request.headers.set("Authorization", "Bearer " + pm.variables.get("token"));' },
+    { group: "🔐 Авторизация", label: "Basic Auth",
+      code: 'const creds = btoa(pm.variables.get("username") + ":" + pm.variables.get("password"));\npm.request.headers.set("Authorization", "Basic " + creds);' },
+    { group: "🔐 Авторизация", label: "API Key заголовок",
+      code: 'pm.request.headers.set("X-API-Key", pm.variables.get("apiKey"));' },
+    // Заголовки
+    { group: "📋 Заголовки", label: "Content-Type JSON",
+      code: 'pm.request.headers.set("Content-Type", "application/json");' },
+    { group: "📋 Заголовки", label: "X-Timestamp",
+      code: 'pm.request.headers.set("X-Timestamp", new Date().toISOString());' },
+    { group: "📋 Заголовки", label: "X-Request-ID (uuid)",
+      code: 'const uid = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,\n  c => { const r=Math.random()*16|0; return (c==="x"?r:(r&0x3|0x8)).toString(16); });\npm.request.headers.set("X-Request-ID", uid);' },
+    // Данные
+    { group: "📦 Данные", label: "Установить переменную",
+      code: 'pm.variables.set("myVar", "value");' },
+    { group: "📦 Данные", label: "Случайный timestamp в body",
+      code: 'const body = JSON.parse(pm.request.body || "{}");\nbody.timestamp = Date.now();\npm.request.body = JSON.stringify(body);' },
+    { group: "📦 Данные", label: "Случайное число в body",
+      code: 'const body = JSON.parse(pm.request.body || "{}");\nbody.nonce = Math.floor(Math.random() * 1e9);\npm.request.body = JSON.stringify(body);' },
+    { group: "📦 Данные", label: "Подставить lastId в URL",
+      code: 'pm.request.url = pm.request.url.replace("{id}", pm.variables.get("lastId"));' },
+    // Логирование
+    { group: "🛠 Отладка", label: "Вывести переменные",
+      code: 'pm.console.log("Variables:", pm.variables.all());' },
+    { group: "🛠 Отладка", label: "Вывести URL и метод",
+      code: 'pm.console.log(pm.request.method, pm.request.url);' },
   ];
 
+  // ── Сниппеты Tests ────────────────────────────────────────────
   const TEST_SNIPPETS = [
-    { label: "Status 200",    code: 'pm.test("статус 200", () => pm.response.to.have.status(200));' },
-    { label: "JSON body",     code: 'pm.test("тело — JSON", () => {\n  const data = pm.response.json();\n  expect(data).toBeDefined();\n});' },
-    { label: "Save token",    code: 'pm.test("токен получен", () => {\n  const t = pm.response.json().access_token;\n  expect(t).toBeDefined();\n  pm.variables.set("token", t);\n});' },
-    { label: "Save id",       code: 'const data = pm.response.json();\npm.variables.set("lastId", data.id);' },
-    { label: "Response time", code: 'pm.test("отвечает быстро", () => {\n  expect(pm.response.responseTime).toBeLessThan(500);\n});' },
-    { label: "Has header",    code: 'pm.test("есть Content-Type", () => pm.response.to.have.header("Content-Type"));' },
+    // Статус
+    { group: "✅ Статус", label: "Статус 200",
+      code: 'pm.test("статус 200", () => pm.response.to.have.status(200));' },
+    { group: "✅ Статус", label: "Статус 201 (создано)",
+      code: 'pm.test("статус 201", () => pm.response.to.have.status(201));' },
+    { group: "✅ Статус", label: "Статус 2xx (любой успех)",
+      code: 'pm.test("успешный статус", () => {\n  expect(pm.response.code).toBeGreaterThan(199);\n  expect(pm.response.code).toBeLessThan(300);\n});' },
+    { group: "✅ Статус", label: "Статус 400 (ошибка клиента)",
+      code: 'pm.test("статус 400", () => pm.response.to.have.status(400));' },
+    // Тело ответа
+    { group: "📄 Тело", label: "Ответ — валидный JSON",
+      code: 'pm.test("тело — JSON", () => {\n  const data = pm.response.json();\n  expect(data).toBeDefined();\n});' },
+    { group: "📄 Тело", label: "Поле id существует",
+      code: 'pm.test("есть id", () => {\n  const data = pm.response.json();\n  expect(data).toHaveProperty("id");\n  expect(data.id).toBeDefined();\n});' },
+    { group: "📄 Тело", label: "Список не пустой",
+      code: 'pm.test("список не пуст", () => {\n  const data = pm.response.json();\n  expect(Array.isArray(data)).toBeTruthy();\n  expect(data.length).toBeGreaterThan(0);\n});' },
+    { group: "📄 Тело", label: "Поле равно значению",
+      code: 'pm.test("поле status === active", () => {\n  expect(pm.response.json().status).toBe("active");\n});' },
+    { group: "📄 Тело", label: "Тело содержит строку",
+      code: 'pm.test("тело содержит слово", () => {\n  expect(pm.response.text()).toContain("success");\n});' },
+    // Заголовки
+    { group: "📋 Заголовки", label: "Content-Type: application/json",
+      code: 'pm.test("Content-Type JSON", () => pm.response.to.have.header("Content-Type"));' },
+    // Производительность
+    { group: "⚡ Производительность", label: "Ответ < 500 мс",
+      code: 'pm.test("отвечает быстро (< 500 мс)", () => {\n  expect(pm.response.responseTime).toBeLessThan(500);\n});' },
+    { group: "⚡ Производительность", label: "Ответ < 2000 мс",
+      code: 'pm.test("ответ < 2 сек", () => {\n  expect(pm.response.responseTime).toBeLessThan(2000);\n});' },
+    // Сохранение данных
+    { group: "💾 Сохранить", label: "Сохранить access_token",
+      code: 'pm.test("токен получен", () => {\n  const t = pm.response.json().access_token;\n  expect(t).toBeDefined();\n  pm.variables.set("token", t);\n  pm.console.log("token:", t);\n});' },
+    { group: "💾 Сохранить", label: "Сохранить refresh_token",
+      code: 'const data = pm.response.json();\npm.variables.set("refreshToken", data.refresh_token);' },
+    { group: "💾 Сохранить", label: "Сохранить id созданного объекта",
+      code: 'const data = pm.response.json();\npm.variables.set("lastId", data.id);\npm.console.log("saved id:", data.id);' },
+    { group: "💾 Сохранить", label: "Сохранить поле из списка",
+      code: 'const list = pm.response.json();\nif (list.length) pm.variables.set("firstId", list[0].id);' },
+    // Отладка
+    { group: "🛠 Отладка", label: "Вывести тело ответа",
+      code: 'pm.console.log("Response:", pm.response.json());' },
+    { group: "🛠 Отладка", label: "Вывести статус и время",
+      code: 'pm.console.log("Status:", pm.response.code, "| Time:", pm.response.responseTime + "ms");' },
   ];
 
   function _renderScriptEditor(container, tab, kind) {
@@ -483,12 +547,27 @@ window.App = window.App || {};
         </div>
 
         <div class="script-toolbar">
-          <button class="script-btn" id="script-run"><i class="bi bi-play-fill"></i> ${App.t("runNow")}</button>
+          <button class="script-btn" id="script-run" title="Ctrl+Enter"><i class="bi bi-play-fill"></i> ${App.t("runNow")}</button>
           <button class="script-btn" id="script-clear"><i class="bi bi-trash3"></i> ${App.t("clear")}</button>
           <span class="script-snippets-label">${App.t("snippets")}:</span>
           <select id="script-snippets" class="script-snippets">
             <option value="">${App.t("pickSnippet")}</option>
-            ${snippets.map((s, i) => `<option value="${i}">${App.escapeHtml(s.label)}</option>`).join("")}
+            ${(() => {
+              const groups = [];
+              const seen = {};
+              snippets.forEach((s, i) => {
+                const g = s.group || "";
+                if (!seen[g]) { seen[g] = []; groups.push(g); }
+                seen[g].push({ s, i });
+              });
+              return groups.map(g => {
+                const opts = seen[g].map(({ s, i }) =>
+                  `<option value="${i}">${App.escapeHtml(s.label)}</option>`).join("");
+                return g
+                  ? `<optgroup label="${App.escapeAttr(g)}">${opts}</optgroup>`
+                  : opts;
+              }).join("");
+            })()}
           </select>
         </div>
 
@@ -500,8 +579,15 @@ window.App = window.App || {};
 
     const ta = document.getElementById("script-code");
     ta.addEventListener("input", (e) => { tab[field] = e.target.value; });
-    // Tab внутри редактора вставляет отступ, а не переключает фокус
+    // Горячие клавиши редактора
     ta.addEventListener("keydown", (e) => {
+      // Ctrl+Enter / Cmd+Enter — запустить скрипт
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        _runScriptFromEditor(tab, kind);
+        return;
+      }
+      // Tab — вставить отступ, не переключать фокус
       if (e.key !== "Tab") return;
       e.preventDefault();
       const s = ta.selectionStart, en = ta.selectionEnd;
@@ -515,8 +601,17 @@ window.App = window.App || {};
       if (isNaN(i)) return;
       const snippet = snippets[i];
       if (!snippet) return;
-      const insert = (ta.value.trim() ? "\n\n" : "") + snippet.code;
-      ta.value += insert;
+      // Вставляем по позиции курсора, не в конец
+      const start = ta.selectionStart ?? ta.value.length;
+      const end   = ta.selectionEnd   ?? start;
+      const before = ta.value.slice(0, start);
+      const after  = ta.value.slice(end);
+      const prefix = before.trimEnd().length ? "\n\n" : "";
+      const suffix = after.trimStart().length ? "\n\n" : "";
+      ta.value = before.trimEnd() + prefix + snippet.code + suffix + after.trimStart();
+      const cur = before.trimEnd().length + prefix.length + snippet.code.length;
+      ta.selectionStart = ta.selectionEnd = cur;
+      ta.focus();
       tab[field] = ta.value;
       e.target.value = "";
     });

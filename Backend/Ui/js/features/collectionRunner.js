@@ -1,0 +1,248 @@
+/**
+ * collectionRunner.js — Запуск всех запросов коллекции по очереди
+ * Показывает pass/fail по тест-скриптам и статус-коды
+ */
+window.App = window.App || {};
+
+(function () {
+
+  let _running = false;
+  let _abort = false;
+
+  // ── run logic ─────────────────────────────────────────────────────────────
+
+  async function _runCollection(colIdx, opts, onResult) {
+    const col = App.state.collections[colIdx];
+    if (!col) return;
+
+    const resolve = App.resolveAll || App.resolveVariables || (s => s);
+    const pick = App.activeRows || (rows => (rows || []).filter(r => (r.key || "").trim()));
+
+    // Flatten all requests (folders + root)
+    const allReqs = [];
+    (col.requests || []).forEach(r => allReqs.push({ req: r, folder: null }));
+    (col.folders || []).forEach(f => {
+      (f.requests || []).forEach(r => allReqs.push({ req: r, folder: f.name }));
+    });
+
+    const delay = opts.delay || 0;
+
+    for (let i = 0; i < allReqs.length; i++) {
+      if (_abort) break;
+      const { req, folder } = allReqs[i];
+      if (!req.url || !req.url.trim()) {
+        onResult({ req, folder, skipped: true });
+        continue;
+      }
+
+      const finalUrl = resolve(req.url).trim();
+      const finalBody = req.body ? resolve(req.body) : "";
+      const headersObj = {};
+      pick(req.headers).forEach(h => { headersObj[resolve(h.key).trim()] = resolve(h.value); });
+      const paramsObj = {};
+      pick(req.params).forEach(p => { paramsObj[resolve(p.key).trim()] = resolve(p.value); });
+
+      let response = null;
+      let testResult = null;
+      const t0 = Date.now();
+      try {
+        response = await window.pywebview.api.send_request(
+          req.method || "GET", finalUrl, headersObj, paramsObj,
+          finalBody.trim() || null
+        );
+      } catch (e) {
+        response = { ok: false, error: String(e) };
+      }
+      const elapsed = Date.now() - t0;
+
+      // run test script if present
+      if (req.testScript && response && App.runScript) {
+        // Create a fake tab-like object
+        const fakeTab = { ...req, response, lastTests: null };
+        testResult = App.runScript(req.testScript, { source: "test", tab: fakeTab, response });
+      }
+
+      onResult({ req, folder, response, testResult, elapsed });
+
+      if (delay > 0 && i < allReqs.length - 1) {
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+  }
+
+  // ── modal ─────────────────────────────────────────────────────────────────
+
+  App.showCollectionRunner = function () {
+    document.getElementById("runner-modal")?.remove();
+
+    const modal = document.createElement("div");
+    modal.id = "runner-modal";
+    modal.className = "app-modal-backdrop";
+
+    const colOptions = (App.state.collections || [])
+      .map((c, i) => `<option value="${i}">${App.escapeHtml(c.name)}</option>`)
+      .join("");
+
+    modal.innerHTML = `
+      <div class="app-modal" style="max-width:720px;width:96%;max-height:90vh;display:flex;flex-direction:column;">
+        <div class="app-modal-header">
+          <span>Collection Runner</span>
+          <button class="app-modal-close" id="runner-close">&times;</button>
+        </div>
+        <div class="app-modal-body" style="flex:1;overflow:auto;display:flex;flex-direction:column;gap:12px;">
+          <!-- config row -->
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <select id="runner-col-select" class="form-select form-select-sm" style="flex:1;min-width:160px;">
+              ${colOptions}
+            </select>
+            <label style="font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:6px;white-space:nowrap;">
+              Задержка (мс):
+              <input type="number" id="runner-delay" value="0" min="0" max="10000" step="100"
+                class="form-control form-control-sm" style="width:80px;">
+            </label>
+            <button id="runner-start" class="btn send-btn btn-sm">
+              <i class="bi bi-play-fill"></i> Запустить
+            </button>
+            <button id="runner-stop" class="btn btn-sm btn-danger" style="display:none;">
+              <i class="bi bi-stop-fill"></i> Стоп
+            </button>
+          </div>
+
+          <!-- summary bar (hidden until run) -->
+          <div id="runner-summary" style="display:none;padding:8px 12px;border-radius:6px;background:var(--bg-input);font-size:12px;display:flex;gap:16px;align-items:center;">
+            <span id="runner-sum-total" style="color:var(--text-dim);">0 запросов</span>
+            <span id="runner-sum-pass" style="color:#4caf50;font-weight:600;">✓ 0 pass</span>
+            <span id="runner-sum-fail" style="color:#f44336;font-weight:600;">✗ 0 fail</span>
+            <span id="runner-sum-skip" style="color:var(--text-dim);">⊘ 0 skip</span>
+            <span id="runner-sum-time" style="color:var(--text-dim);margin-left:auto;"></span>
+          </div>
+
+          <!-- progress -->
+          <div id="runner-progress-wrap" style="display:none;">
+            <div style="height:4px;background:var(--border);border-radius:2px;overflow:hidden;">
+              <div id="runner-progress-bar" style="height:100%;width:0%;background:var(--accent);transition:width .2s;"></div>
+            </div>
+          </div>
+
+          <!-- results table -->
+          <div id="runner-results" style="flex:1;overflow:auto;"></div>
+        </div>
+      </div>`;
+
+    document.body.appendChild(modal);
+
+    modal.querySelector("#runner-close").onclick = () => { _abort = true; modal.remove(); };
+    modal.addEventListener("click", e => { if (e.target === modal) { _abort = true; modal.remove(); } });
+
+    const startBtn = modal.querySelector("#runner-start");
+    const stopBtn  = modal.querySelector("#runner-stop");
+
+    startBtn.addEventListener("click", async () => {
+      if (_running) return;
+      _running = true;
+      _abort = false;
+
+      const colIdx  = parseInt(modal.querySelector("#runner-col-select").value);
+      const delay   = parseInt(modal.querySelector("#runner-delay").value) || 0;
+      const col     = App.state.collections[colIdx];
+      if (!col) { _running = false; return; }
+
+      // count total
+      const total = (col.requests || []).length +
+        (col.folders || []).reduce((s, f) => s + (f.requests || []).length, 0);
+
+      startBtn.style.display = "none";
+      stopBtn.style.display  = "";
+      modal.querySelector("#runner-progress-wrap").style.display = "";
+      modal.querySelector("#runner-summary").style.display = "flex";
+
+      const resultsDiv = modal.querySelector("#runner-results");
+      resultsDiv.innerHTML = "";
+
+      let done = 0, pass = 0, fail = 0, skip = 0, totalMs = 0;
+      const tStart = Date.now();
+
+      function _updateSummary() {
+        modal.querySelector("#runner-sum-total").textContent = `${done}/${total} запросов`;
+        modal.querySelector("#runner-sum-pass").textContent  = `✓ ${pass} pass`;
+        modal.querySelector("#runner-sum-fail").textContent  = `✗ ${fail} fail`;
+        modal.querySelector("#runner-sum-skip").textContent  = `⊘ ${skip} skip`;
+        modal.querySelector("#runner-sum-time").textContent  = `${((Date.now() - tStart)/1000).toFixed(1)}s`;
+        modal.querySelector("#runner-progress-bar").style.width = total ? `${(done/total)*100}%` : "0%";
+      }
+
+      await _runCollection(colIdx, { delay }, ({ req, folder, response, testResult, elapsed, skipped }) => {
+        done++;
+
+        let rowClass = "runner-row";
+        let statusHtml = "";
+        let testHtml = "";
+
+        if (skipped) {
+          skip++;
+          statusHtml = `<span style="color:var(--text-dim);">пропущен</span>`;
+          rowClass += " runner-skip";
+        } else if (!response || !response.ok) {
+          fail++;
+          statusHtml = `<span style="color:#f44336;">${App.escapeHtml(response?.error || "Ошибка")}</span>`;
+          rowClass += " runner-fail";
+        } else {
+          const sc = response.status_code;
+          const scOk = sc >= 200 && sc < 300;
+
+          // Evaluate test results (runScript returns { tests: [{name, ok}], ... })
+          let testPassed = 0, testFailed = 0;
+          if (testResult && testResult.tests) {
+            testResult.tests.forEach(a => {
+              if (a.ok) testPassed++; else testFailed++;
+            });
+          }
+
+          const overallOk = scOk && testFailed === 0;
+          if (overallOk) pass++; else fail++;
+          rowClass += overallOk ? " runner-pass" : " runner-fail";
+
+          statusHtml = `<span style="color:${scOk ? "#4caf50" : "#f44336"};font-weight:600;">${sc}</span>
+            <span style="color:var(--text-dim);font-size:11px;">&nbsp;${elapsed}мс</span>`;
+
+          if (testResult && testResult.tests && testResult.tests.length) {
+            testHtml = testResult.tests.map(a =>
+              `<div style="font-size:11px;color:${a.ok ? "#4caf50" : "#f44336"};">
+                ${a.ok ? "✓" : "✗"} ${App.escapeHtml(a.name || "")}
+                ${a.error ? `<span style="opacity:.7;"> — ${App.escapeHtml(a.error)}</span>` : ""}
+              </div>`
+            ).join("");
+          }
+        }
+
+        const row = document.createElement("div");
+        row.className = rowClass;
+        const folderLabel = folder ? `<span style="color:var(--text-dim);font-size:11px;">${App.escapeHtml(folder)} / </span>` : "";
+        row.innerHTML = `
+          <div style="display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-bottom:1px solid var(--border);">
+            <span class="method-badge method-${(req.method||"GET").toLowerCase()}" style="flex-shrink:0;font-size:10px;padding:1px 5px;border-radius:3px;">
+              ${req.method || "GET"}
+            </span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:12px;">${folderLabel}${App.escapeHtml(req.name || req.url || "")}</div>
+              <div style="font-size:10px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${App.escapeHtml(req.url || "")}</div>
+              ${testHtml ? `<div style="margin-top:4px;">${testHtml}</div>` : ""}
+            </div>
+            <div style="flex-shrink:0;text-align:right;">${statusHtml}</div>
+          </div>`;
+        resultsDiv.appendChild(row);
+        resultsDiv.scrollTop = resultsDiv.scrollHeight;
+
+        _updateSummary();
+      });
+
+      _running = false;
+      startBtn.style.display = "";
+      stopBtn.style.display  = "none";
+    });
+
+    stopBtn.addEventListener("click", () => { _abort = true; });
+  };
+
+
+})();

@@ -19,6 +19,46 @@ window.App = window.App || {};
 (function () {
   const STORAGE_KEY = "theme.userThemes";     // {name: theme}
   const CURRENT_KEY = "theme.current";        // имя активной темы (или "custom")
+  const QUICK_KEY   = "theme.quick";          // последняя применённая тема (быстрый старт)
+
+  // ── Применяем тему НЕМЕДЛЕННО из localStorage, не ожидая pywebview ────────
+  // Вызывается синхронно, пока страница ещё не успела отрисоваться.
+  // Устраняет «флеш» (мигание дефолтной темы до загрузки сохранённой).
+  (function _earlyApply() {
+    try {
+      const raw = localStorage.getItem(QUICK_KEY);
+      if (raw) {
+        const t = JSON.parse(raw);
+        // Минимальный набор переменных — полный applyTheme недоступен ещё.
+        const r = document.documentElement;
+        const set = (k, v) => v && r.style.setProperty(k, v);
+        set("--accent",       t.accent);
+        set("--bg-app",       t.bgApp);
+        set("--bg-panel",     t.bgPanel);
+        set("--bg-input",     t.bgInput);
+        set("--text-main",    t.textMain);
+        set("--text-color",   t.textMain);
+        set("--text-dim",     t.textDim);
+        set("--border-color", t.borderColor);
+        set("--success",      t.success);
+        set("--warn",         t.warn);
+        set("--danger",       t.danger);
+        if (t.borderRadius !== undefined) r.style.setProperty("--radius", t.borderRadius + "px");
+        if (t.fontSize)      r.style.fontSize = t.fontSize + "px";
+        const isLight = _earlyIsLight(t.bgApp || "#14151a");
+        r.setAttribute("data-bs-theme", isLight ? "light" : "dark");
+      }
+    } catch (_) {}
+  })();
+
+  function _earlyIsLight(hex) {
+    try {
+      const c = hex.replace("#","");
+      const f = c.length === 3 ? c.split("").map(x=>x+x).join("") : c;
+      const r=parseInt(f.slice(0,2),16), g=parseInt(f.slice(2,4),16), b=parseInt(f.slice(4,6),16);
+      return (r*299+g*587+b*114)/1000 > 128;
+    } catch { return false; }
+  }
 
   // ============================================================
   // ПРЕСЕТЫ — известные схемы, а не рандом
@@ -265,6 +305,10 @@ window.App = window.App || {};
       if (raw) {
         const theme = JSON.parse(raw);
         App.applyTheme(theme);
+        // Синхронизируем localStorage с вычисленным accentText — следующий старт без флеша.
+        const filled = _fill(theme);
+        const toCache = Object.assign({}, filled, { accentText: contrastText(filled.accent) });
+        try { localStorage.setItem(QUICK_KEY, JSON.stringify(toCache)); } catch (_) {}
       }
     } catch (e) {
       console.warn("[Theme] load error:", e);
@@ -286,6 +330,10 @@ window.App = window.App || {};
   App.saveAndApplyTheme = async function (theme) {
     const t = _fill(theme);
     App.applyTheme(t);
+    // Сохраняем в localStorage с вычисленным accentText —
+    // чтобы инлайн-скрипт в <head> мог применить его мгновенно без флеша.
+    const toSave = Object.assign({}, t, { accentText: contrastText(t.accent) });
+    try { localStorage.setItem(QUICK_KEY, JSON.stringify(toSave)); } catch (_) {}
     const api = window.pywebview && window.pywebview.api;
     if (api && api.save_theme) {
       try { await api.save_theme(JSON.stringify(t)); } catch (e) { console.warn(e); }
@@ -441,14 +489,12 @@ window.App = window.App || {};
     wrap.innerHTML = Object.entries(PRESETS).map(([key, t]) => `
       <div class="theme-card" data-preset="${key}" title="${t.name}">
         <div class="theme-card-swatches" style="background:${t.bgApp};">
-          <span style="background:${t.bgPanel};"></span>
-          <span style="background:${t.bgInput};"></span>
-          <span style="background:${t.accent};"></span>
+          <span class="swatch-accent" style="background:${t.accent};flex:1.6;"></span>
           <span style="background:${t.success};"></span>
           <span style="background:${t.warn};"></span>
           <span style="background:${t.danger};"></span>
         </div>
-        <div class="theme-card-name" style="color:${t.textMain};background:${t.bgPanel};">
+        <div class="theme-card-name" style="color:${t.textMain};background:${t.bgPanel};border-top:1px solid ${t.borderColor};">
           ${t.name}
         </div>
       </div>`).join("");
@@ -564,7 +610,7 @@ window.App = window.App || {};
         <div class="modal-content theme-modal-content">
           <div class="modal-header">
             <h5 class="modal-title"><i class="bi bi-palette me-2"></i><span data-i18n="theme">Тема</span></h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body">
 

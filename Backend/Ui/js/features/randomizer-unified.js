@@ -27,6 +27,49 @@ const UnifiedRandomizer = (() => {
   let _openOptsIdx = -1;      // у какого поля раскрыты настройки
   let schemaFields = null;    // {path: meta} из Swagger, если запрос импортирован
 
+  // ── Пользовательские шаблоны (localStorage) ───────────────────
+  const _CTL_KEY = "ur.customTemplates";   // localStorage key
+  let _customTemplates = {};               // { id: { label, data } }
+
+  function _loadCustomTpl() {
+    try {
+      const raw = localStorage.getItem(_CTL_KEY);
+      _customTemplates = raw ? JSON.parse(raw) : {};
+    } catch (_) { _customTemplates = {}; }
+  }
+  function _saveCustomTpl() {
+    try { localStorage.setItem(_CTL_KEY, JSON.stringify(_customTemplates)); } catch (_) {}
+  }
+  function _renderCustomTpls() {
+    const list = document.querySelector(".ur-root #ur-custom-tpl-list");
+    if (!list) return;
+    const keys = Object.keys(_customTemplates);
+    if (!keys.length) {
+      list.innerHTML = `<span style="font-size:11px;color:var(--text-dim);opacity:.6;">${T("noCustomTemplates","Нет сохранённых шаблонов")}</span>`;
+      return;
+    }
+    list.innerHTML = keys.map(id => `
+      <span class="ur-custom-tpl-chip" data-id="${id}" style="display:inline-flex;align-items:center;gap:2px;">
+        <button class="ur-example-btn randomizer-btn ur-ctpl-load" data-id="${id}" style="font-size:11px;padding:3px 6px;border-radius:4px 0 0 4px;">
+          💾 ${App.escapeHtml(_customTemplates[id].label)}
+        </button>
+        <button class="randomizer-btn ur-ctpl-del" data-id="${id}" style="font-size:11px;padding:3px 5px;border-radius:0 4px 4px 0;border-left:1px solid var(--border-color);opacity:.7;" title="Удалить шаблон">✕</button>
+      </span>`).join("");
+    list.querySelectorAll(".ur-ctpl-load").forEach(b => {
+      b.addEventListener("click", () => {
+        const tpl = _customTemplates[b.dataset.id];
+        if (tpl) loadTemplate(tpl.data);
+      });
+    });
+    list.querySelectorAll(".ur-ctpl-del").forEach(b => {
+      b.addEventListener("click", () => {
+        delete _customTemplates[b.dataset.id];
+        _saveCustomTpl();
+        _renderCustomTpls();
+      });
+    });
+  }
+
   // ============================================================
   // ПРИМЕРЫ ШАБЛОНОВ
   // ============================================================
@@ -35,6 +78,12 @@ const UnifiedRandomizer = (() => {
     product: { label: "📦 Product", data: { title: "Wireless Mouse", price: 29.99, category: "electronics", description: "Ergonomic wireless mouse", inStock: true, rating: 4.5 } },
     order: { label: "🛒 Order", data: { orderId: 10001, customer: "Jane Smith", email: "jane@mail.com", total: 159.9, status: "pending", items: 3, shipping: { city: "Moscow", zip: "101000", address: "Red Square 1" } } },
     auth: { label: "🔐 Auth", data: { username: "testuser", password: "qwerty123", email: "test@example.com", rememberMe: false } },
+    ruPerson:  { label: "🇷🇺 Физлицо РФ", data: { fio: "Иванов Иван Иванович", phone: "+7 (999) 123-45-67", email: "ivanov@mail.ru", inn: "123456789012", snils: "123-456-789 01", passport: "45 10 123456", address: "г. Москва, ул. Ленина, д. 1, кв. 1" } },
+    ruCompany: { label: "🏢 Юрлицо РФ",  data: { name: "ООО Ромашка", inn: "1234567890", kpp: "123401001", ogrn: "1234567890123", bik: "044525225", rs: "40702810000000000000", address: "г. Москва, ул. Пушкина, д. 10" } },
+    uzPerson:  { label: "🇺🇿 Физлицо UZ", data: { fullName: "Каримов Алишер", phone: "+998 (90) 123-45-67", email: "alisher@gmail.com", pinfl: "12345678901234", passport: "AB 1234567", address: "Тошкент вилояти, Тошкент, Мустақиллик кўчаси, 1-уй" } },
+    uzCompany: { label: "🏢 Юрлицо UZ",  data: { name: 'МЧЖ "Технология"', inn: "123456789", address: "Тошкент, Амир Темур кўчаси, 10" } },
+    usPerson:  { label: "🇺🇸 Person (US)", data: { fullName: "John Smith", phone: "+1 (555) 123-4567", email: "john.smith@gmail.com", ssn: "123-45-6789", address: "123 Main St, New York, NY 10001", zip: "10001", state: "New York (NY)" } },
+    usCompany: { label: "🏢 Company (US)", data: { name: "Acme Corp LLC", ein: "12-3456789", phone: "+1 (800) 555-0100", email: "info@acme.com", address: "1 Corporate Blvd, Austin, TX 78701", zip: "78701" } },
   };
 
   // ============================================================
@@ -44,6 +93,222 @@ const UnifiedRandomizer = (() => {
   const CITIES = ["Moscow","London","New York","Berlin","Tokyo","Paris","Sydney","Toronto","Dubai","Singapore","Rome","Istanbul"];
   const LOREM = ["Lorem ipsum dolor sit amet","Consectetur adipiscing elit","Sed do eiusmod tempor incididunt","Ut labore et dolore magna aliqua","Duis aute irure dolor"];
   const STATUSES = ["active","inactive","pending","approved","rejected","cancelled"];
+
+  // ── Российские данные ──────────────────────────────────────────
+  const RU_FIRST_M = ["Александр","Дмитрий","Михаил","Иван","Алексей","Сергей","Андрей","Николай","Евгений","Артём","Максим","Владимир","Кирилл","Роман","Павел","Виктор","Антон","Степан","Глеб","Тимур"];
+  const RU_FIRST_F = ["Анна","Мария","Елена","Наталья","Ольга","Татьяна","Ирина","Светлана","Екатерина","Юлия","Виктория","Дарья","Марина","Надежда","Ксения","Алина","Валерия","Полина","Людмила","Оксана"];
+  const RU_LAST_M  = ["Иванов","Смирнов","Кузнецов","Попов","Васильев","Петров","Соколов","Михайлов","Новиков","Федоров","Морозов","Волков","Алексеев","Лебедев","Семёнов","Егоров","Павлов","Козлов","Степанов","Никитин"];
+  const RU_LAST_F  = ["Иванова","Смирнова","Кузнецова","Попова","Васильева","Петрова","Соколова","Михайлова","Новикова","Федорова","Морозова","Волкова","Алексеева","Лебедева","Семёнова","Егорова","Павлова","Козлова","Степанова","Никитина"];
+  const RU_PATRON_M = ["Александрович","Дмитриевич","Михайлович","Иванович","Алексеевич","Сергеевич","Андреевич","Николаевич","Евгеньевич","Артёмович","Максимович","Владимирович","Кириллович","Романович","Павлович"];
+  const RU_PATRON_F = ["Александровна","Дмитриевна","Михайловна","Ивановна","Алексеевна","Сергеевна","Андреевна","Николаевна","Евгеньевна","Артёмовна","Максимовна","Владимировна","Кирилловна","Романовна","Павловна"];
+  const RU_CITIES  = ["Москва","Санкт-Петербург","Новосибирск","Екатеринбург","Нижний Новгород","Казань","Челябинск","Омск","Самара","Ростов-на-Дону","Уфа","Красноярск","Пермь","Воронеж","Волгоград","Краснодар","Саратов","Тюмень","Тольятти","Ижевск"];
+  const RU_STREETS = ["Ленина","Пушкина","Гагарина","Советская","Мира","Садовая","Молодёжная","Центральная","Школьная","Новая","Лесная","Кирова","Октябрьская","Победы","Набережная","Парковая","Заречная","Луговая","Полевая","Строителей"];
+  const RU_REGIONS = ["Московская обл.","Ленинградская обл.","Краснодарский край","Свердловская обл.","Республика Татарстан","Ростовская обл.","Башкортостан","Челябинская обл.","Новосибирская обл.","Самарская обл."];
+  const RU_BANK_NAMES = ["Сбербанк","ВТБ","Газпромбанк","Альфа-Банк","Россельхозбанк","Тинькофф Банк","Открытие","РСХБ","ПСБ","Совкомбанк"];
+  const RU_AUTO_LETTERS = "АВЕКМНОРСТУХ"; // кириллица, допустимая в номерах
+
+  // ── Российские вспомогательные функции ─────────────────────────
+  function _innCheckDigit(coefs, ds) {
+    return coefs.reduce((s, c, i) => s + c * ds[i], 0) % 11 % 10;
+  }
+  function genInnFiz() {
+    const d = Array.from({length: 10}, () => rnd(10));
+    const c1 = _innCheckDigit([7,2,4,10,3,5,9,4,6,8], d);
+    const c2 = _innCheckDigit([3,7,2,4,10,3,5,9,4,6,8], [...d, c1]);
+    return d.join("") + c1 + c2;
+  }
+  function genInnUr() {
+    const d = Array.from({length: 9}, () => rnd(10));
+    // первые 4 цифры — код региона/налоговой, не должен быть 0000
+    if (d[0] === 0 && d[1] === 0 && d[2] === 0 && d[3] === 0) d[0] = 1;
+    const c = _innCheckDigit([2,4,10,3,5,9,4,6,8], d);
+    return d.join("") + c;
+  }
+  function genSnils() {
+    const d = Array.from({length: 9}, () => rnd(10));
+    // номер не должен быть < 1001000 (правило ПФР)
+    let num = +d.join("");
+    if (num < 1001000) { d[0] = 0; d[1] = 0; d[2] = 1; d[3] = rnd(9) + 1; }
+    let sum = d.reduce((s, v, i) => s + v * (9 - i), 0);
+    if (sum > 101) sum = sum % 101;
+    const ctl = (sum === 100 || sum === 101) ? 0 : sum;
+    const base = d.join("").replace(/(\d{3})(\d{3})(\d{3})/, "$1-$2-$3");
+    return `${base} ${String(ctl).padStart(2,"0")}`;
+  }
+  function genKpp() {
+    // NNNN + PP + XXX  (регион+налоговая+причина)
+    const region = String(rnd(98) + 1).padStart(2,"0");
+    const tax    = String(rnd(98) + 1).padStart(2,"0");
+    const reason = String(rnd(899) + 100);   // 001-999, но без 001-009 для уникальности
+    return region + tax + "01" + reason.slice(-3);
+  }
+  function genOgrn() {
+    const d = Array.from({length: 12}, () => rnd(10));
+    // Первая цифра — признак ЮЛ (1) или ИП (не используем здесь)
+    d[0] = 1;
+    const n = BigInt(d.join(""));
+    const ctl = Number(n % 11n % 10n);
+    return d.join("") + ctl;
+  }
+  function genOgrnip() {
+    const d = Array.from({length: 14}, () => rnd(10));
+    d[0] = rnd(2) + 3; // 3 или 4 — признак ОГРНИП
+    const n = BigInt(d.join(""));
+    const ctl = Number(n % 13n % 10n);
+    return d.join("") + ctl;
+  }
+  function genPassportRf() {
+    const series = String(rnd(90) + 10) + " " + String(rnd(90) + 10);
+    const number = String(rnd(900000) + 100000);
+    return `${series} ${number}`;
+  }
+  function genBik() {
+    // БИК: 04 + регион(2) + подразд(2) + номер(3)
+    const reg = String(rnd(98) + 1).padStart(2,"0");
+    const sub = pick(["01","02","03","04","05"]);
+    const num = String(rnd(899) + 100);
+    return "04" + reg + sub + num;
+  }
+  function genRs() {
+    // Расчётный счёт — 20 цифр, начинается с 405/406/407/408/423/426/407
+    const prefixes = ["40702","40701","40802","40703","42301","40501","40601"];
+    return pick(prefixes) + digits(15);
+  }
+  function genAutoRf() {
+    const L = RU_AUTO_LETTERS;
+    const region = pick(["77","78","50","47","23","66","63","16","52","54","55","45","72","18"]);
+    return L[rnd(L.length)] + String(rnd(900)+100) + L[rnd(L.length)] + L[rnd(L.length)] + region;
+  }
+  function genRuFullNameM() { return `${pick(RU_LAST_M)} ${pick(RU_FIRST_M)} ${pick(RU_PATRON_M)}`; }
+  function genRuFullNameF() { return `${pick(RU_LAST_F)} ${pick(RU_FIRST_F)} ${pick(RU_PATRON_F)}`; }
+  function genRuFullName() { return rnd(2) ? genRuFullNameM() : genRuFullNameF(); }
+  function genRuAddress() {
+    const city = pick(RU_CITIES);
+    const street = pick(RU_STREETS);
+    const house = rnd(200) + 1;
+    const apt = rnd(2) ? `, кв. ${rnd(200)+1}` : "";
+    return `г. ${city}, ул. ${street}, д. ${house}${apt}`;
+  }
+  function genRuEmail() {
+    const name = pick(RU_FIRST_M.concat(RU_FIRST_F)).toLowerCase()
+      .replace(/[ёе]/g,"e").replace(/[яа]/g,"a").replace(/[ыи]/g,"i")
+      .replace(/[оу]/g,"u").replace(/[нн]/g,"n").replace(/[^a-z]/g,lower(1));
+    return `${name}${rnd(99)+1}@${pick(["mail.ru","yandex.ru","rambler.ru","bk.ru","inbox.ru","list.ru"])}`;
+  }
+  function genRuPhone() {
+    // +7 (9XX) XXX-XX-XX
+    const code = String(rnd(9) + 900) ;
+    return `+7 (${code}) ${digits(3)}-${digits(2)}-${digits(2)}`;
+  }
+
+  // ── Узбекистан ──────────────────────────────────────────────────
+  const UZ_FIRST_M  = ["Акбар","Алишер","Бобур","Дилшод","Жамшид","Зафар","Комил","Лазиз","Мирзо","Нодир","Отабек","Равшан","Санжар","Тимур","Улугбек","Фаррух","Хасан","Шерзод","Элмурод","Юсуф"];
+  const UZ_FIRST_F  = ["Азиза","Барно","Гулнора","Дилноза","Замира","Зулайхо","Камола","Лола","Малика","Наргиза","Нилуфар","Ойдин","Озода","Сабина","Севара","Умида","Феруза","Хилола","Шахло","Яшнар"];
+  const UZ_LAST     = ["Каримов","Рахимов","Усмонов","Хасанов","Назаров","Исмоилов","Юсупов","Мирзаев","Холматов","Тошматов","Эргашев","Азимов","Сулаймонов","Бобоев","Норматов","Жалолов","Турсунов","Хамидов","Санақулов","Ўринов"];
+  const UZ_CITIES   = ["Тошкент","Самарқанд","Бухоро","Наманган","Андижон","Фарғона","Нукус","Қарши","Ургенч","Термиз","Жиззах","Гулистон","Навоий","Денов","Чирчиқ","Олмалиқ","Ангрен","Бекобод","Қўқон","Марғилон"];
+  const UZ_STREETS  = ["Мустақиллик","Навоий","Амир Темур","Беруний","Шароф Рашидов","Ипак Йўли","Янги Ўзбекистон","Дўстлик","Тинчлик","Истиқлол","Ўзбекистон","Мирзо Улугбек","Буюк Ипак Йўли","Зарафшон","Чўлпон"];
+  const UZ_REGIONS  = ["Тошкент вилояти","Самарқанд вилояти","Фарғона вилояти","Андижон вилояти","Наманган вилояти","Бухоро вилояти","Хоразм вилояти","Қашқадарё вилояти","Сурхондарё вилояти","Жиззах вилояти","Навоий вилояти","Сирдарё вилояти","Қорақалпоғистон"];
+  const UZ_OPERATORS = ["90","91","93","94","95","97","98","99","33","50"];
+
+  function genUzPhone()    { return `+998 (${pick(UZ_OPERATORS)}) ${digits(3)}-${digits(2)}-${digits(2)}`; }
+  function genUzFullName() { const m = rnd(2); return `${pick(UZ_LAST)} ${m ? pick(UZ_FIRST_M) : pick(UZ_FIRST_F)}`; }
+  function genUzAddress()  {
+    return `${pick(UZ_REGIONS)}, ${pick(UZ_CITIES)}, ${pick(UZ_STREETS)} кўчаси, ${rnd(200)+1}-уй`;
+  }
+  function genUzEmail()    {
+    const name = pick(UZ_FIRST_M.concat(UZ_FIRST_F)).toLowerCase()
+      .replace(/[ўқғҳ]/g, c => ({ў:"u",қ:"q",ғ:"g",ҳ:"h"})[c] || lower(1));
+    return `${name}${rnd(99)+1}@${pick(["mail.ru","gmail.com","inbox.ru","rambler.ru","umail.uz","mail.uz"])}`;
+  }
+  /** ПИНФЛ — 14-значный персональный идентификационный номер физлица */
+  function genUzPinfl() {
+    // Структура: [пол+дата(7)][регион(2)][порядковый(4)][контроль(1)]
+    const year    = 1960 + rnd(50);
+    const month   = String(rnd(12)+1).padStart(2,"0");
+    const day     = String(rnd(28)+1).padStart(2,"0");
+    const gender  = rnd(2); // 1 — муж, 2 — жен
+    const century = year >= 2000 ? (gender ? 5 : 6) : (gender ? 1 : 2);
+    const yy      = String(year).slice(2);
+    const region  = String(rnd(14)+1).padStart(2,"0");
+    const seq     = String(rnd(9000)+1000);
+    const base    = `${century}${yy}${month}${day}${region}${seq}`;
+    // Простейший контрольный разряд (сумма % 10)
+    const ctl = base.split("").reduce((s,c) => s + +c, 0) % 10;
+    return base + ctl;
+  }
+  /** ИНН юрлица Узбекистан — 9 цифр */
+  function genUzInn() {
+    const region = String(rnd(14)+1).padStart(2,"0");
+    const body   = digits(6);
+    const ctl    = String((region + body).split("").reduce((s,c) => s + +c, 0) % 10);
+    return region + body + ctl;
+  }
+  /** Серия и номер паспорта Узбекистана: AA 1234567 */
+  function genUzPassport() {
+    const alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const series = alpha[rnd(26)] + alpha[rnd(26)];
+    return `${series} ${digits(7)}`;
+  }
+
+  // ── США ─────────────────────────────────────────────────────────
+  const US_FIRST_M  = ["James","John","Robert","Michael","William","David","Richard","Joseph","Thomas","Charles","Christopher","Daniel","Matthew","Anthony","Mark","Donald","Steven","Paul","Andrew","Joshua"];
+  const US_FIRST_F  = ["Mary","Patricia","Jennifer","Linda","Barbara","Elizabeth","Susan","Jessica","Sarah","Karen","Lisa","Nancy","Betty","Margaret","Sandra","Ashley","Dorothy","Kimberly","Emily","Donna"];
+  const US_LAST     = ["Smith","Johnson","Williams","Brown","Jones","Garcia","Miller","Davis","Rodriguez","Martinez","Hernandez","Lopez","Gonzalez","Wilson","Anderson","Thomas","Taylor","Moore","Jackson","Martin"];
+  const US_CITIES   = ["New York","Los Angeles","Chicago","Houston","Phoenix","Philadelphia","San Antonio","San Diego","Dallas","San Jose","Austin","Jacksonville","Fort Worth","Columbus","Charlotte","Indianapolis","San Francisco","Seattle","Denver","Washington"];
+  const US_STATES   = [["AL","Alabama"],["AK","Alaska"],["AZ","Arizona"],["CA","California"],["CO","Colorado"],["FL","Florida"],["GA","Georgia"],["IL","Illinois"],["NY","New York"],["TX","Texas"],["WA","Washington"],["OH","Ohio"],["PA","Pennsylvania"],["MI","Michigan"],["NC","North Carolina"],["NJ","New Jersey"],["VA","Virginia"],["MA","Massachusetts"],["TN","Tennessee"],["IN","Indiana"]];
+  const US_STREETS  = ["Main St","Oak Ave","Maple Dr","Cedar Ln","Pine St","Elm St","Washington Blvd","Park Ave","Lake Dr","Hill Rd","River Rd","Forest Ave","Sunset Blvd","Lincoln Ave","Jefferson St","Madison Ave","Monroe St","Adams St","Jackson Blvd","Harrison Ave"];
+  const US_DOMAINS  = ["gmail.com","yahoo.com","outlook.com","hotmail.com","icloud.com","aol.com","protonmail.com","mail.com"];
+
+  function genUsPhone()    {
+    const area = String(rnd(800)+200);
+    return `+1 (${area}) ${digits(3)}-${digits(4)}`;
+  }
+  function genUsFullName() { return `${pick(US_FIRST_M.concat(US_FIRST_F))} ${pick(US_LAST)}`; }
+  function genUsAddress()  {
+    const st = pick(US_STATES);
+    return `${rnd(9999)+1} ${pick(US_STREETS)}, ${pick(US_CITIES)}, ${st[0]} ${digits(5)}`;
+  }
+  function genUsEmail()    {
+    const fn = pick(US_FIRST_M.concat(US_FIRST_F)).toLowerCase();
+    const ln = pick(US_LAST).toLowerCase();
+    return `${fn}.${ln}${rnd(99)+1}@${pick(US_DOMAINS)}`;
+  }
+  function genUsZip()      { return digits(5); }
+  function genUsState()    { const s = pick(US_STATES); return `${s[1]} (${s[0]})`; }
+  /** SSN — Social Security Number: XXX-XX-XXXX */
+  function genUsSsn()      {
+    // Первые три цифры не могут быть 000, 666, 900-999
+    let area;
+    do { area = rnd(1000); } while (area === 0 || area === 666 || area >= 900);
+    return `${String(area).padStart(3,"0")}-${String(rnd(100)).padStart(2,"0")}-${String(rnd(10000)).padStart(4,"0")}`;
+  }
+  /** EIN — Employer Identification Number: XX-XXXXXXX */
+  function genUsEin()      {
+    const prefixes = ["01","02","03","04","05","06","10","11","12","13","14","15","16","20","21","22","23","24","25","26","27","30","31","32","33","34","35","36","37","38","39","40","41","42","43","44","45","46","47","48","50","51","52","53","54","55","56","57","58","59","60","61","62","63","64","65","66","67","68","71","72","73","74","75","76","77","80","81","82","83","84","85","86","87","88","90","91","92","93","94","95","98","99"];
+    return `${pick(prefixes)}-${digits(7)}`;
+  }
+  /** Номер кредитной карты (алгоритм Луна) */
+  function genUsCreditCard() {
+    const prefixes = [["4"],["51"],["52"],["53"],["54"],["55"],["37"],["6011"]];
+    const prefix = pick(prefixes);
+    const len = 16;
+    const body = [...prefix];
+    while (body.length < len - 1) body.push(String(rnd(10)));
+    // Контрольная цифра Луна
+    let sum = 0;
+    for (let i = 0; i < body.length; i++) {
+      let n = +body[body.length - 1 - i];
+      if (i % 2 === 0) { n *= 2; if (n > 9) n -= 9; }
+      sum += n;
+    }
+    body.push(String((10 - (sum % 10)) % 10));
+    return body.join("").replace(/(\d{4})(\d{4})(\d{4})(\d{4})/, "$1 $2 $3 $4");
+  }
+  /** Номер водительского удостоверения США (упрощённый формат) */
+  function genUsDlNumber() {
+    const st = pick(US_STATES)[0];
+    return `${st}${digits(7)}`;
+  }
 
   const CHARSETS = {
     text:         "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
@@ -90,6 +355,48 @@ const UnifiedRandomizer = (() => {
     number:   { label: "Целое число",    group: "basic", fn: () => rnd(10000),                  dyn: "randomInt" },
     float:    { label: "Дробное",        group: "basic", fn: () => +(Math.random() * 1000).toFixed(2), dyn: "randomPrice" },
     bool:     { label: "true / false",   group: "basic", fn: () => Math.random() > 0.5,         dyn: "randomBoolean" },
+
+    // ── Российские реалии ────────────────────────────────────────
+    ruFullName:  { label: "ФИО (рус.)",           group: "russia", fn: genRuFullName },
+    ruFullNameM: { label: "ФИО мужское",           group: "russia", fn: genRuFullNameM },
+    ruFullNameF: { label: "ФИО женское",           group: "russia", fn: genRuFullNameF },
+    ruPhone:     { label: "Телефон RU (+7)",        group: "russia", fn: genRuPhone },
+    ruEmail:     { label: "Email RU (mail/yandex)", group: "russia", fn: genRuEmail },
+    ruCity:      { label: "Город РФ",              group: "russia", fn: () => pick(RU_CITIES) },
+    ruAddress:   { label: "Адрес РФ",             group: "russia", fn: genRuAddress },
+    ruInnFiz:    { label: "ИНН физлица (12 цифр)", group: "russia", fn: genInnFiz },
+    ruInnUr:     { label: "ИНН юрлица (10 цифр)",  group: "russia", fn: genInnUr },
+    ruSnils:     { label: "СНИЛС",                 group: "russia", fn: genSnils },
+    ruKpp:       { label: "КПП",                   group: "russia", fn: genKpp },
+    ruOgrn:      { label: "ОГРН (юрлицо)",         group: "russia", fn: genOgrn },
+    ruOgrnip:    { label: "ОГРНИП (ИП)",           group: "russia", fn: genOgrnip },
+    ruPassport:  { label: "Паспорт РФ (серия+№)",  group: "russia", fn: genPassportRf },
+    ruBik:       { label: "БИК банка",             group: "russia", fn: genBik },
+    ruRs:        { label: "Расчётный счёт (р/с)",  group: "russia", fn: genRs },
+    ruAuto:      { label: "Гос. номер авто РФ",    group: "russia", fn: genAutoRf },
+
+    // ── Узбекистан ───────────────────────────────────────────────
+    uzFullName:  { label: "ФИО (узб.)",            group: "uzbek", fn: genUzFullName },
+    uzPhone:     { label: "Телефон UZ (+998)",      group: "uzbek", fn: genUzPhone },
+    uzEmail:     { label: "Email (uz/gmail)",       group: "uzbek", fn: genUzEmail },
+    uzCity:      { label: "Город Узбекистана",      group: "uzbek", fn: () => pick(UZ_CITIES) },
+    uzAddress:   { label: "Адрес Узбекистана",      group: "uzbek", fn: genUzAddress },
+    uzPinfl:     { label: "ПИНФЛ (14 цифр)",        group: "uzbek", fn: genUzPinfl },
+    uzInn:       { label: "ИНН юрлица UZ (9 цифр)", group: "uzbek", fn: genUzInn },
+    uzPassport:  { label: "Паспорт UZ (AA 1234567)",group: "uzbek", fn: genUzPassport },
+
+    // ── США ──────────────────────────────────────────────────────
+    usFullName:  { label: "Full Name (US)",         group: "usa", fn: genUsFullName },
+    usPhone:     { label: "Phone US (+1)",           group: "usa", fn: genUsPhone },
+    usEmail:     { label: "Email US",               group: "usa", fn: genUsEmail },
+    usCity:      { label: "City (US)",              group: "usa", fn: () => pick(US_CITIES) },
+    usState:     { label: "State (US)",             group: "usa", fn: genUsState },
+    usAddress:   { label: "Address (US)",           group: "usa", fn: genUsAddress },
+    usZip:       { label: "ZIP Code",               group: "usa", fn: genUsZip },
+    usSsn:       { label: "SSN (XXX-XX-XXXX)",      group: "usa", fn: genUsSsn },
+    usEin:       { label: "EIN (XX-XXXXXXX)",       group: "usa", fn: genUsEin },
+    usCreditCard:{ label: "Credit Card (Luhn)",     group: "usa", fn: genUsCreditCard },
+    usDl:        { label: "Driver License",         group: "usa", fn: genUsDlNumber },
 
     // Бывший Type 1 — теперь генератор поля
     chars:    { label: "По типу символов", group: "advanced", opts: "chars", fn: (fc) => genChars(fc.opts) },
@@ -198,27 +505,42 @@ const UnifiedRandomizer = (() => {
   ];
 
   const GROUPS = {
-    smart: "Умный подбор",
-    basic: "Типы данных",
-    schema: "📋 По схеме OpenAPI",
+    smart:    "Умный подбор",
+    basic:    "Типы данных",
+    russia:   "🇷🇺 Россия",
+    uzbek:    "🇺🇿 Узбекистан",
+    usa:      "🇺🇸 США",
+    schema:   "📋 По схеме OpenAPI",
     advanced: "Расширенные",
-    invalid: "⚠ Невалидные данные",
+    invalid:  "⚠ Невалидные данные",
   };
 
   function autoGenerate(key, value) {
     const k = (key || "").toLowerCase();
-    if (k.includes("email")) return GEN.email.fn();
+    // Российские реквизиты — проверяем первыми, чтобы не перехватил общий «name»/«phone»
+    if (k === "inn" || k.includes("_inn") || k.includes("inn_")) return rnd(2) ? genInnFiz() : genInnUr();
+    if (k.includes("снилс") || k === "snils")          return genSnils();
+    if (k === "kpp" || k.includes("_kpp") || k.includes("kpp_")) return genKpp();
+    if (k === "ogrn" || k.includes("огрн"))            return genOgrn();
+    if (k === "ogrnip" || k.includes("огрнип"))        return genOgrnip();
+    if (k.includes("passport") || k.includes("паспорт")) return genPassportRf();
+    if (k === "bik" || k.includes("_bik"))             return genBik();
+    if (k.includes("account") || k.includes("счёт") || k.includes("schet") || k === "rs") return genRs();
+    if (k.includes("auto") && (k.includes("num") || k.includes("plate") || k.includes("reg"))) return genAutoRf();
+    // Общие
+    if (k.includes("email"))                           return GEN.email.fn();
     if (k.includes("password") || k.includes("pass")) return GEN.password.fn();
-    if (k.includes("phone") || k.includes("tel")) return GEN.phone.fn();
+    if (k.includes("phone") || k.includes("tel"))     return genRuPhone();
     if (k.includes("url") || k.includes("website") || k.includes("site")) return GEN.url.fn();
-    if (k.includes("city")) return GEN.city.fn();
-    if (k.includes("status") || k === "state") return GEN.status.fn();
+    if (k.includes("city") || k.includes("город"))   return pick(RU_CITIES);
+    if (k.includes("status") || k === "state")        return GEN.status.fn();
     if (k.includes("date") || k.includes("created") || k.includes("updated")) return GEN.date.fn();
-    if (k.includes("name") || k.includes("username") || k.includes("customer")) return GEN.name.fn();
-    if (k.includes("uuid") || k.includes("guid")) return GEN.uuid.fn();
+    if (k.includes("fio") || k.includes("фио") || k.includes("fullname") || k.includes("full_name")) return genRuFullName();
+    if (k.includes("name") || k.includes("username") || k.includes("customer")) return genRuFullName();
+    if (k.includes("uuid") || k.includes("guid"))     return GEN.uuid.fn();
     if (k.includes("description") || k.includes("catchphrase") || k.includes("bio")) return GEN.lorem.fn();
-    if (k.includes("zip") || k.includes("code")) return digits(6);
-    if (k.includes("address")) return `${pick(CITIES)}, ${lower(6)} st. ${rnd(200) + 1}`;
+    if (k.includes("zip") || k.includes("code"))      return digits(6);
+    if (k.includes("address") || k.includes("адрес")) return genRuAddress();
     if (k.includes("price") || k.includes("total") || k.includes("amount") || k.includes("rating")) return GEN.float.fn();
     if (k.includes("id") && typeof value === "number") return rnd(100000);
     if (typeof value === "number" && !Number.isInteger(value)) return GEN.float.fn();
@@ -229,16 +551,36 @@ const UnifiedRandomizer = (() => {
 
   function detectType(key, value) {
     const k = (key || "").toLowerCase();
-    if (k.includes("email")) return "email";
-    if (k.includes("password") || k.includes("pass")) return "password";
-    if (k.includes("phone") || k.includes("tel")) return "phone";
+    // Российские реквизиты
+    if (k === "inn" || k.includes("_inn") || k.includes("inn_")) return "ruInnFiz";
+    if (k.includes("снилс") || k === "snils")            return "ruSnils";
+    if (k === "kpp" || k.includes("_kpp"))               return "ruKpp";
+    if (k === "ogrn" || k.includes("огрн"))              return "ruOgrn";
+    if (k === "ogrnip")                                  return "ruOgrnip";
+    if (k.includes("passport") || k.includes("паспорт")) return "ruPassport";
+    if (k === "bik" || k.includes("_bik"))               return "ruBik";
+    if (k.includes("account") || k === "rs")             return "ruRs";
+    // Узбекские реквизиты
+    if (k === "pinfl" || k.includes("пинфл"))            return "uzPinfl";
+    // Американские реквизиты
+    if (k === "ssn" || k.includes("social_security"))    return "usSsn";
+    if (k === "ein" || k.includes("employer_id"))        return "usEin";
+    if (k === "zip" || k === "zipcode" || k === "zip_code") return "usZip";
+    if (k === "state" && typeof value === "string" && value.length <= 2) return "usState";
+    if (k.includes("credit_card") || k.includes("card_number")) return "usCreditCard";
+    // Общие
+    if (k.includes("email"))                             return "email";
+    if (k.includes("password") || k.includes("pass"))   return "password";
+    if (k.includes("phone") || k.includes("tel"))       return "ruPhone";
     if (k.includes("url") || k.includes("website") || k.includes("site")) return "url";
-    if (k.includes("city")) return "city";
-    if (k.includes("status") || k === "state") return "status";
+    if (k.includes("city") || k.includes("город"))     return "ruCity";
+    if (k.includes("status"))                           return "status";
     if (k.includes("date") || k.includes("created") || k.includes("updated")) return "date";
-    if (k.includes("name") || k.includes("username") || k.includes("customer")) return "name";
-    if (k.includes("uuid") || k.includes("guid")) return "uuid";
+    if (k.includes("fio") || k.includes("фио") || k.includes("fullname") || k.includes("full_name")) return "ruFullName";
+    if (k.includes("name") || k.includes("username") || k.includes("customer")) return "ruFullName";
+    if (k.includes("uuid") || k.includes("guid"))       return "uuid";
     if (k.includes("description") || k.includes("catchphrase") || k.includes("bio")) return "lorem";
+    if (k.includes("address") || k.includes("адрес"))  return "ruAddress";
     if (k.includes("price") || k.includes("total") || k.includes("amount") || k.includes("rating")) return "float";
     if (typeof value === "number" && !Number.isInteger(value)) return "float";
     if (typeof value === "number") return "number";
@@ -334,6 +676,26 @@ const UnifiedRandomizer = (() => {
           <div style="display:flex;gap:4px;flex-wrap:wrap;">${ex}</div>
         </div>
 
+        <div class="ur-section" id="ur-custom-section" style="padding-top:0;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:4px;margin-bottom:4px;">
+            <label class="ur-label" style="margin:0;">${T("myTemplates","Мои шаблоны")}</label>
+            <button id="ur-save-tpl" class="randomizer-btn" style="font-size:11px;padding:2px 8px;" title="${T("saveTemplate","Сохранить шаблон")}">
+              <i class="bi bi-floppy"></i> ${T("saveTemplate","Сохранить")}
+            </button>
+          </div>
+          <div id="ur-custom-tpl-list" style="display:flex;gap:4px;flex-wrap:wrap;min-height:22px;"></div>
+          <div id="ur-save-tpl-form" style="display:none;margin-top:6px;gap:4px;align-items:center;">
+            <input type="text" id="ur-tpl-name" class="form-control form-control-sm"
+                   placeholder="${T("templateNameHint","Название шаблона...")}" style="flex:1;font-size:12px;">
+            <button id="ur-tpl-name-ok" class="randomizer-btn-primary" style="font-size:11px;padding:3px 8px;white-space:nowrap;">
+              <i class="bi bi-check-lg"></i>
+            </button>
+            <button id="ur-tpl-name-cancel" class="randomizer-btn" style="font-size:11px;padding:3px 7px;">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+        </div>
+
         <div class="ur-section ur-toolbar">
           <button id="ur-load-body" class="randomizer-btn-primary" style="flex:1;font-size:12px;">
             <i class="bi bi-download"></i> ${T("fromBody")}
@@ -405,6 +767,41 @@ const UnifiedRandomizer = (() => {
         if (e) loadTemplate(e.data);
       });
     });
+
+    // ── Пользовательские шаблоны ────────────────────────────────
+    _loadCustomTpl();
+    _renderCustomTpls();
+
+    const saveTplBtn  = document.getElementById("ur-save-tpl");
+    const saveTplForm = document.getElementById("ur-save-tpl-form");
+    const tplNameInp  = document.getElementById("ur-tpl-name");
+    const tplNameOk   = document.getElementById("ur-tpl-name-ok");
+    const tplNameCancel = document.getElementById("ur-tpl-name-cancel");
+
+    saveTplBtn.addEventListener("click", () => {
+      if (!Object.keys(templateObj).length) {
+        _notify(T("loadTemplateFirst","Сначала загрузите шаблон"), "warning"); return;
+      }
+      saveTplForm.style.display = "flex";
+      tplNameInp.value = "";
+      tplNameInp.focus();
+    });
+    const _doSaveTpl = () => {
+      const label = (tplNameInp.value || "").trim();
+      if (!label) { tplNameInp.focus(); return; }
+      const id = "u_" + Date.now();
+      _customTemplates[id] = { label, data: JSON.parse(JSON.stringify(templateObj)) };
+      _saveCustomTpl();
+      _renderCustomTpls();
+      saveTplForm.style.display = "none";
+      _notify(T("savedTemplate","Шаблон сохранён: ") + label, "success");
+    };
+    tplNameOk.addEventListener("click", _doSaveTpl);
+    tplNameInp.addEventListener("keydown", e => {
+      if (e.key === "Enter") _doSaveTpl();
+      if (e.key === "Escape") { saveTplForm.style.display = "none"; }
+    });
+    tplNameCancel.addEventListener("click", () => { saveTplForm.style.display = "none"; });
 
     document.getElementById("ur-load-body").addEventListener("click", loadFromBody);
     document.getElementById("ur-load-file").addEventListener("click", () => document.getElementById("ur-file-input").click());

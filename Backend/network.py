@@ -25,6 +25,36 @@ MAX_FILE_SIZE     = 50 * 1024 * 1024    # 50 МБ — на один загруж
 MAX_TOTAL_UPLOAD  = 100 * 1024 * 1024   # 100 МБ — суммарно за один запрос
 REQUEST_TIMEOUT   = 30                  # секунд
 
+# Persistent session — сохраняет куки между запросами
+_SESSION = requests.Session()
+
+
+def get_cookies_by_domain() -> dict:
+    """Возвращает куки из сессии сгруппированные по домену."""
+    result: dict = {}
+    for cookie in _SESSION.cookies:
+        domain = cookie.domain or "unknown"
+        result.setdefault(domain, [])
+        result[domain].append({
+            "name": cookie.name,
+            "value": cookie.value,
+            "path": cookie.path or "/",
+            "secure": bool(cookie.secure),
+        })
+    return result
+
+
+def set_cookie(domain: str, name: str, value: str, path: str = "/") -> None:
+    _SESSION.cookies.set(name, value, domain=domain, path=path)
+
+
+def delete_cookie(domain: str, name: str) -> None:
+    _SESSION.cookies.clear(domain=domain, name=name)
+
+
+def clear_all_cookies() -> None:
+    _SESSION.cookies.clear()
+
 
 def send_http_request(
     method: str,
@@ -68,7 +98,7 @@ def send_http_request(
             data_payload = body.encode("utf-8") if body else None
 
         start = time.time()
-        resp = requests.request(
+        resp = _SESSION.request(
             method, url,
             params=clean_params,
             headers=clean_headers,

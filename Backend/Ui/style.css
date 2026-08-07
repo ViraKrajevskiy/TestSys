@@ -482,25 +482,72 @@ body {
 /* Popover выбора положения сайдбара */
 .sb-pos-menu {
   position: fixed;
-  width: 190px;
+  width: 210px;
   background: var(--bg-panel);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, .4);
-  padding: 4px;
+  border-radius: calc(var(--radius, 6px) + 2px);
+  box-shadow: 0 12px 32px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.3);
+  padding: 5px;
   z-index: 2000;
-  display: flex; flex-direction: column; gap: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  animation: menuPop .12s ease;
+}
+@keyframes menuPop {
+  from { opacity: 0; transform: scale(.96) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1)  translateY(0); }
 }
 .sb-pos-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 7px 10px; border: none; background: transparent;
-  color: var(--text-main); text-align: left; cursor: pointer;
-  border-radius: 4px; font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text-main);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 5px;
+  font-size: 12.5px;
+  transition: background .1s, color .1s;
+  width: 100%;
 }
-.sb-pos-item i { color: var(--text-dim); font-size: 15px; width: 18px; }
-.sb-pos-item:hover { background: var(--bg-input); }
-.sb-pos-item.active { background: var(--accent-soft, rgba(78,166,255,.15)); color: var(--accent); }
+.sb-pos-item i {
+  color: var(--text-dim);
+  font-size: 14px;
+  width: 16px;
+  flex-shrink: 0;
+  transition: color .1s;
+}
+.sb-pos-item:hover {
+  background: var(--bg-hover, rgba(255,255,255,.07));
+  color: var(--accent);
+}
+.sb-pos-item:hover i { color: var(--accent); }
+.sb-pos-item.active {
+  background: var(--accent-soft, rgba(78,166,255,.15));
+  color: var(--accent);
+}
 .sb-pos-item.active i { color: var(--accent); }
+/* Подменю — стрелочка правее */
+.sb-pos-item .bi-chevron-right {
+  margin-left: auto !important;
+  font-size: 10px !important;
+  opacity: .5;
+  width: auto !important;
+}
+.sb-pos-item:hover .bi-chevron-right { opacity: 1; }
+/* Подменю само по себе */
+.sb-submenu {
+  animation: menuPop .1s ease;
+}
+.sb-more-sep {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 6px;
+  opacity: .6;
+}
 
 /* Resize handle sidebar — тонкая полоска у правой границы */
 #sidebar-resize-handle {
@@ -1577,9 +1624,6 @@ a.upd-action.upd-link:hover { border-color: var(--accent); color: var(--accent);
 .load-progress-text { font-size: 10.5px; color: var(--text-dim); margin-top: 3px; text-align: right; }
 
 .load-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 8px;
   margin-bottom: 14px;
 }
 .load-stat {
@@ -1651,6 +1695,202 @@ a.upd-action.upd-link:hover { border-color: var(--accent); color: var(--accent);
   color: #ffc107;
   text-align: right;
 }
+
+/* ==================== LOAD TEST — новые блоки ==================== */
+
+/* Сетка статов (вместо grid на .load-summary напрямую) */
+.load-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+/* Конфиг-бар */
+.load-cfg-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Мульти-запросы */
+.load-multi-panel {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 10px;
+}
+.load-multi-list {
+  max-height: 280px;
+  overflow-y: auto;
+}
+.load-multi-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.load-multi-item:hover { background: var(--bg-panel); }
+.load-multi-item input[type="checkbox"] { flex-shrink: 0; }
+.load-multi-meta {
+  color: var(--text-dim);
+  font-size: 10.5px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Multi-request дерево */
+.lm-tree-section { margin-bottom: 2px; }
+.lm-tree-coll-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+  color: var(--text-primary);
+  user-select: none;
+}
+.lm-tree-coll-head:hover { background: var(--bg-panel); }
+.lm-tree-folder { padding-left: 14px; }
+.lm-tree-folder-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  user-select: none;
+}
+.lm-tree-folder-head:hover { background: var(--bg-panel); color: var(--text-primary); }
+.lm-folder-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-dim);
+  background: var(--bg-app);
+  border-radius: 8px;
+  padding: 0 5px;
+}
+.lm-tree-req {
+  padding-left: 24px !important;
+  gap: 6px !important;
+}
+.lm-method-badge { font-size: 10.5px; font-weight: 700; flex-shrink: 0; min-width: 38px; }
+.lm-req-name { font-size: 11.5px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lm-req-url { font-size: 10px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
+.lm-chevron { font-size: 9px; color: var(--text-dim); flex-shrink: 0; }
+.lm-tree-item { display: flex; align-items: center; padding-left: 14px; gap: 4px; }
+.lm-inline-del {
+  background: none; border: none; color: var(--text-dim);
+  padding: 0 2px; cursor: pointer; font-size: 13px; flex-shrink: 0;
+}
+.lm-inline-del:hover { color: var(--danger); }
+
+/* Assertions / пороги */
+.load-thresholds-section {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+}
+.load-thresholds-section summary { padding: 2px 0; }
+
+.load-thresholds-result {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  margin-bottom: 10px;
+  border: 2px solid;
+}
+.thr-pass { border-color: #22c55e; background: rgba(34,197,94,.08); }
+.thr-fail { border-color: #dc3545; background: rgba(220,53,69,.08); }
+.thr-badge {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  padding: 2px 10px;
+  border-radius: 4px;
+}
+.thr-pass .thr-badge { color: #22c55e; }
+.thr-fail .thr-badge { color: #dc3545; }
+.thr-item { font-size: 12px; color: var(--text-dim); }
+.thr-item b { color: var(--text-main); }
+.thr-ok { color: #22c55e !important; }
+.thr-no { color: #dc3545 !important; }
+
+/* Breakdown по запросам (multi-mode) */
+.load-multi-breakdown {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin-bottom: 10px;
+}
+.load-multi-breakdown-title {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin-bottom: 6px;
+}
+.load-multi-row {
+  display: flex;
+  gap: 12px;
+  font-size: 11.5px;
+  padding: 3px 0;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.load-multi-row + .load-multi-row { border-top: 1px solid var(--border-color); }
+.load-multi-label {
+  font-family: 'Consolas', monospace;
+  font-size: 11px;
+  color: var(--text-main);
+  flex: 1;
+  min-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Сравнение сессий */
+.load-compare {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+.load-cmp-table {
+  width: 100%;
+  font-size: 12px;
+  border-collapse: collapse;
+}
+.load-cmp-table th, .load-cmp-table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border-color);
+  text-align: right;
+  white-space: nowrap;
+}
+.load-cmp-table th:first-child,
+.load-cmp-table td:first-child { text-align: left; color: var(--text-dim); }
+.load-cmp-table .cmp-head th {
+  color: var(--text-dim);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  background: var(--bg-panel);
+}
+.load-cmp-table .cmp-head th:first-child { color: transparent; }
+.cmp-delta { font-weight: 700; }
 
 /* ==================== ЛОГИ ==================== */
 .log-output {
@@ -1959,6 +2199,40 @@ a.upd-action.upd-link:hover { border-color: var(--accent); color: var(--accent);
 }
 
 /* ---------- Тулбар New / Import / Export / Swagger ---------- */
+/* Sidebar search */
+.sb-search-wrap {
+  position: relative;
+  padding: 4px 10px 6px;
+}
+.sb-search-input {
+  width: 100%;
+  height: 26px;
+  background: var(--bg-input, var(--bg-secondary));
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font-size: 11.5px;
+  padding: 0 24px 0 8px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.sb-search-input:focus { border-color: var(--accent); }
+.sb-search-input::placeholder { color: var(--text-dim); }
+.sb-search-clear {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  font-size: 13px;
+}
+.sb-search-clear:hover { color: var(--text-primary); }
+
 .sb-toolbar {
   display: flex;
   gap: 4px;
@@ -2061,6 +2335,12 @@ a.upd-action.upd-link:hover { border-color: var(--accent); color: var(--accent);
 }
 .sb-folder-chevron { font-size: 9px; color: var(--text-dim); width: 10px; flex-shrink: 0; }
 .sb-folder-icon    { color: var(--accent); font-size: 12px; flex-shrink: 0; }
+
+/* Drag & drop */
+.sb-dragging { opacity: 0.4; }
+.sb-item[draggable="true"] { cursor: grab; }
+.sb-item[draggable="true"]:active { cursor: grabbing; }
+.sb-drop-over { outline: 2px dashed var(--accent); outline-offset: -2px; border-radius: var(--radius); background: var(--accent-soft); }
 .sb-folder-name {
   font-size: 12px;
   color: var(--text-main);
@@ -2387,3 +2667,82 @@ body.fu-dragging .fu-empty {
   border-color: var(--accent);
   background: rgba(var(--accent-rgb, 88, 166, 255), 0.06);
 }
+/* ── Code Generation modal ─────────────────────────────────────── */
+.cg-tab-btn {
+  padding: 8px 14px;
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color .12s, border-color .12s;
+}
+.cg-tab-btn:hover { color: var(--text); }
+.cg-tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ── app-modal (используется Collection Runner и др.) ─────────── */
+.app-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 1060;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn .15s ease;
+}
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+
+.app-modal {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius, 8px);
+  box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  display: flex;
+  flex-direction: column;
+  animation: slideUp .18s ease;
+}
+@keyframes slideUp { from { transform:translateY(12px); opacity:0; } to { transform:translateY(0); opacity:1; } }
+
+.app-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-main);
+  flex-shrink: 0;
+}
+
+.app-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 4px;
+  transition: color .15s, background .15s;
+}
+.app-modal-close:hover { color: var(--text-main); background: var(--bg-input); }
+
+.app-modal-body {
+  padding: 14px 16px;
+  overflow: auto;
+}
+
+/* ── Collection Runner ─────────────────────────────────────────── */
+.runner-pass  { background: rgba(76,175,80,.05); }
+.runner-fail  { background: rgba(244,67,54,.05); }
+.runner-skip  { opacity: .6; }
+
+/* ── Cookie Manager ────────────────────────────────────────────── */
+.ck-row:hover { background: var(--bg-hover, rgba(255,255,255,.04)); }
+.ck-val-display { cursor: text; }

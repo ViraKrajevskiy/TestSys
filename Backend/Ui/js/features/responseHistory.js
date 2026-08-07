@@ -134,6 +134,107 @@ window.App = window.App || {};
     return out;
   }
 
+  // ============================================================
+  // HAR ЭКСПОРТ
+  // ============================================================
+
+  /**
+   * Экспорт истории вкладки (или всех вкладок) в .har формат.
+   * tab = null → берём все вкладки из App.state.tabs
+   */
+  App.exportHar = async function (tab) {
+    const entries = [];
+    const tabs = tab ? [tab] : (App.state && App.state.tabs ? App.state.tabs : []);
+
+    tabs.forEach(t => {
+      (t.responseHistory || []).forEach(h => {
+        const resp = h.response || {};
+        const reqHeaders = (t.headers || [])
+          .filter(hd => hd.key && hd.enabled !== false)
+          .map(hd => ({ name: hd.key, value: hd.value || "" }));
+
+        // Response headers из строки "Key: Value\nKey: Value"
+        const respHeaders = [];
+        if (resp.headers && typeof resp.headers === "string") {
+          resp.headers.split("\n").forEach(line => {
+            const idx = line.indexOf(":");
+            if (idx > 0) respHeaders.push({
+              name: line.slice(0, idx).trim(),
+              value: line.slice(idx + 1).trim(),
+            });
+          });
+        } else if (resp.headers && typeof resp.headers === "object") {
+          Object.entries(resp.headers).forEach(([k, v]) => respHeaders.push({ name: k, value: String(v) }));
+        }
+
+        const bodySize = resp.body ? new Blob([resp.body]).size : -1;
+        const timeMs = typeof resp.elapsed === "number" ? resp.elapsed : -1;
+
+        entries.push({
+          startedDateTime: new Date(h.ts).toISOString(),
+          time: timeMs,
+          request: {
+            method: h.method || "GET",
+            url: h.url || "",
+            httpVersion: "HTTP/1.1",
+            headers: reqHeaders,
+            queryString: [],
+            cookies: [],
+            headersSize: -1,
+            bodySize: t.body ? new Blob([t.body]).size : -1,
+            ...(t.body ? { postData: { mimeType: "application/json", text: t.body } } : {}),
+          },
+          response: {
+            status: resp.status || 0,
+            statusText: String(resp.status || ""),
+            httpVersion: "HTTP/1.1",
+            headers: respHeaders,
+            cookies: [],
+            content: {
+              size: bodySize,
+              mimeType: (respHeaders.find(h => h.name.toLowerCase() === "content-type") || {}).value || "application/json",
+              text: resp.body || "",
+            },
+            redirectURL: "",
+            headersSize: -1,
+            bodySize,
+          },
+          cache: {},
+          timings: { send: 0, wait: timeMs >= 0 ? timeMs : 0, receive: 0 },
+        });
+      });
+    });
+
+    if (!entries.length) {
+      App.showAlert("История пуста — нечего экспортировать");
+      return;
+    }
+
+    const har = {
+      log: {
+        version: "1.2",
+        creator: { name: "TestSys", version: "1.0" },
+        entries,
+      },
+    };
+    const json = JSON.stringify(har, null, 2);
+    const filename = "testsys_history.har";
+
+    if (window.pywebview?.api?.export_collection_file) {
+      const res = await window.pywebview.api.export_collection_file(filename, json);
+      if (res?.ok) App.showAlert("✓ HAR экспортирован: " + res.path);
+      else if (!res?.cancelled) App.showAlert("Ошибка: " + res?.error);
+    } else {
+      const blob = new Blob([json], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      App.showAlert("✓ HAR скачан");
+    }
+  };
+
   /** Простой диф по строкам — не оптимальный, но читаемый: помечаем что добавилось/убыло. */
   function _diffLines(base, cur) {
     const setB = new Set(base);
