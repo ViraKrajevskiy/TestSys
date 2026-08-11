@@ -100,10 +100,10 @@ window.App = window.App || {};
         <span id="env-badge-name">${App.t("noEnv") || "no env"}</span>
         <i class="bi bi-chevron-down" style="font-size:10px;opacity:.6;"></i>
       </button>`;
-    // Кладём перед первой кнопкой навбара справа (иконка sync)
-    const syncBtn = document.getElementById("sync-btn");
-    if (syncBtn && syncBtn.parentNode) {
-      syncBtn.parentNode.insertBefore(wrap, syncBtn);
+    // Кладём перед кнопкой настроек (settings-btn всегда видима в navbar)
+    const settingsBtn = document.getElementById("settings-btn");
+    if (settingsBtn && settingsBtn.parentNode === navbar) {
+      navbar.insertBefore(wrap, settingsBtn);
     } else {
       navbar.appendChild(wrap);
     }

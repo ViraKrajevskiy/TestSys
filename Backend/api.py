@@ -16,7 +16,26 @@ import string
 import re
 import requests
 
+# Добавляем testsys_backend в sys.path до импорта runner/network,
+# потому что main.py делает это позже (внутри _load_backend_app),
+# а api.py грузится раньше — на строке `from api import Api`.
+_API_DIR = os.path.dirname(os.path.abspath(__file__))
+_TESTSYS_BACKEND = os.path.join(os.path.dirname(_API_DIR), "testsys_backend")
+for _p in (_API_DIR, _TESTSYS_BACKEND):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 from network import send_http_request
+
+# runner.py используется только для Collection Runner / Load Test / Parallel Test.
+# Ленивый импорт: не ломаем старт приложения, если файл отсутствует.
+_runner = None
+def _get_runner():
+    global _runner
+    if _runner is None:
+        import runner as _r
+        _runner = _r
+    return _runner
 
 IS_FROZEN = getattr(sys, "frozen", False)
 
@@ -749,6 +768,95 @@ class Api:
             pass
 
         self._schedule_returned_tab(state_json)
+        return True
+
+    # ========== SCRIPT EDITOR WINDOW ==========
+    SCRIPT_EDITOR_HTML = os.path.join(BASE_DIR, "Ui", "script-editor.html")
+
+    def open_script_editor_window(self, tab_id, kind, script, tab_title=""):
+        """Открывает минималистичное окно редактора скрипта (без navbar/sidebar)."""
+        label = "Pre-request" if kind == "pre" else "Tests"
+        win_title = f"TestSys — {label}" + (f" [{tab_title}]" if tab_title else "")
+
+        # Не открывать второе окно для того же таба+вида
+        for w in webview.windows:
+            if w.title == win_title:
+                try:
+                    w.restore()
+                    w.show()
+                except Exception:
+                    pass
+                return True
+
+        new_api = Api(window_kind="script_editor")
+        new_api._script_editor_tab_id = tab_id
+        new_api._script_editor_kind   = kind
+        new_api._script_editor_script = script
+        new_api._script_editor_main   = self   # ссылка на главный Api
+
+        SCRIPT_EDITOR_HTML = os.path.join(BASE_DIR, "Ui", "script-editor.html")
+        win = webview.create_window(
+            title=win_title,
+            url=SCRIPT_EDITOR_HTML,
+            js_api=new_api,
+            width=820,
+            height=600,
+            min_size=(560, 400),
+        )
+
+        payload = json.dumps({
+            "tabId":  tab_id,
+            "kind":   kind,
+            "script": script,
+            "title":  tab_title,
+        })
+
+        def on_loaded():
+            win.evaluate_js(f"window.initScriptEditor({payload})")
+
+        win.events.loaded += on_loaded
+        self.child_windows.append(win)
+        return True
+
+    def update_script_from_editor(self, tab_id, kind, script):
+        """Вызывается из окна редактора — обновляет скрипт в главном окне."""
+        # self может быть Api script_editor — идём через _script_editor_main
+        target = getattr(self, "_script_editor_main", self)
+        # Сохраняем актуальное значение, чтобы при закрытии не затёрлось
+        self._script_editor_script = script
+        payload = json.dumps({"tabId": tab_id, "kind": kind, "script": script})
+        main_win = webview.windows[0] if webview.windows else None
+        if main_win:
+            main_win.evaluate_js(f"window.receiveScriptFromEditor && window.receiveScriptFromEditor({payload})")
+        return True
+
+    def run_script_from_editor(self, tab_id, kind, script):
+        """Главное окно запускает скрипт и шлёт результат обратно в редактор."""
+        payload = json.dumps({"tabId": tab_id, "kind": kind, "script": script})
+        main_win = webview.windows[0] if webview.windows else None
+        if main_win:
+            main_win.evaluate_js(f"window.runScriptFromEditor && window.runScriptFromEditor({payload})")
+        return True
+
+    def close_script_editor(self):
+        """Закрывает окно редактора скрипта."""
+        win = webview.active_window()
+        if win:
+            try:
+                win.destroy()
+            except Exception:
+                pass
+        return True
+
+    def script_editor_result(self, results_json):
+        """Главное окно шлёт результаты тестов в окно редактора."""
+        # Вызывается из главного окна через JS bridge — ищем нужное окно
+        for w in self.child_windows:
+            if "script_editor" in (w.title or "").lower() or True:
+                try:
+                    w.evaluate_js(f"window.showScriptResult && window.showScriptResult({results_json})")
+                except Exception:
+                    pass
         return True
 
     # ========== SETTINGS ==========
@@ -2127,3 +2235,109 @@ class Api:
         url = f"{API_BASE_URL}/health"
         result = send_http_request("GET", url, {}, {}, None)
         return result["ok"]
+
+    # ============================================================
+    # RUNNER — Collection Runner, Load Test, Parallel Test
+    # ============================================================
+
+    def run_collection(self, collection_json: str, variables_json: str,
+                       options_json: str = "{}") -> str:
+        """
+        Прогоняет коллекцию запросов на Python.
+        Возвращает JSON-список результатов.
+        Вызывается из collectionRunner.js вместо JS-цикла по send_request.
+        """
+        try:
+            import json as _json
+            collection = _json.loads(collection_json) if isinstance(collection_json, str) else collection_json
+            variables  = _json.loads(variables_json)  if isinstance(variables_json,  str) else (variables_json or {})
+            options    = _json.loads(options_json)    if isinstance(options_json,    str) else (options_json or {})
+
+            results = _get_runner().run_collection(collection, variables, options)
+            return _json.dumps({"ok": True, "results": results}, ensure_ascii=False)
+        except Exception as e:
+            import traceback, json as _json
+            logger.error(f"run_collection error: {e}\n{traceback.format_exc()}")
+            return _json.dumps({"ok": False, "error": str(e)})
+
+    # ---- Load Test ---------------------------------------------------
+
+    _load_runs: dict = {}   # run_id → LoadTestRun
+
+    def load_test_start(self, config_json: str) -> str:
+        """
+        Запускает нагрузочный тест.
+        Возвращает {ok, run_id}.
+        JS запрашивает прогресс через load_test_status(run_id).
+        """
+        try:
+            import json as _json
+            config = _json.loads(config_json) if isinstance(config_json, str) else config_json
+
+            run = _get_runner().LoadTestRun(config)
+            Api._load_runs[run.run_id] = run
+            run.start()
+
+            return _json.dumps({"ok": True, "run_id": run.run_id})
+        except Exception as e:
+            import json as _json
+            logger.error(f"load_test_start error: {e}")
+            return _json.dumps({"ok": False, "error": str(e)})
+
+    def load_test_status(self, run_id: str, since_idx: int = 0) -> str:
+        """
+        Возвращает прогресс нагрузочного теста:
+        {run_id, running, total, new_points, next_idx, elapsed_ms, stats, error}
+        """
+        import json as _json
+        run = Api._load_runs.get(run_id)
+        if run is None:
+            return _json.dumps({"ok": False, "error": "run not found"})
+        status = run.get_status(since_idx=since_idx)
+        status["ok"] = True
+        return _json.dumps(status, ensure_ascii=False)
+
+    def load_test_stop(self, run_id: str) -> str:
+        """Останавливает нагрузочный тест по run_id."""
+        import json as _json
+        run = Api._load_runs.get(run_id)
+        if run is None:
+            return _json.dumps({"ok": False, "error": "run not found"})
+        run.stop()
+        return _json.dumps({"ok": True})
+
+    def load_test_cleanup(self, run_id: str) -> str:
+        """Удаляет завершённый тест из памяти."""
+        import json as _json
+        Api._load_runs.pop(run_id, None)
+        return _json.dumps({"ok": True})
+
+    # ---- Parallel Test -----------------------------------------------
+
+    def run_parallel_test(self, requests_json: str, variables_json: str,
+                          config_json: str = "{}") -> str:
+        """
+        Параллельный запуск нескольких разных запросов.
+        Цель — найти race conditions на сервере.
+        Возвращает {ok, results, stats, total, rounds}.
+        """
+        try:
+            import json as _json
+            requests_list = _json.loads(requests_json) if isinstance(requests_json, str) else requests_json
+            variables     = _json.loads(variables_json) if isinstance(variables_json, str) else (variables_json or {})
+            config        = _json.loads(config_json)    if isinstance(config_json,    str) else (config_json or {})
+
+            rounds      = max(1, config.get("rounds", 1))
+            concurrency = max(1, config.get("concurrency", rounds))
+            delay_ms    = max(0, config.get("delay_ms", 0))
+
+            result = _get_runner().run_parallel_test(requests_list, variables,
+                                               rounds=rounds,
+                                               concurrency=concurrency,
+                                               delay_ms=delay_ms)
+            result["ok"] = True
+            return _json.dumps(result, ensure_ascii=False)
+        except Exception as e:
+            import traceback, json as _json
+            logger.error(f"run_parallel_test error: {e}\n{traceback.format_exc()}")
+            return _json.dumps({"ok": False, "error": str(e)})

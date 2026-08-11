@@ -3,7 +3,26 @@ window.App = window.App || {};
 App.sendRequest = async function (tabId) {
   const tab = App.state.tabs.find((t) => t.id === tabId);
   if (!tab || !tab.url.trim()) return;
-  if (!window.pywebview) return;
+
+  // Если pywebview ещё не готов (первые ~500мс после старта) —
+  // ждём до 5 секунд вместо тихого return.
+  // Раньше первый клик просто пропадал без какого-либо сигнала пользователю.
+  if (!window.pywebview || typeof window.pywebview.api?.send_request !== "function") {
+    tab.sending = true;
+    App.renderTabContent();
+    const api = await App.waitForApi("send_request", 5000);
+    tab.sending = false;
+    if (!api) {
+      tab.response = {
+        ok: false,
+        error: App.t ? App.t("errNoBackend") : "Соединение с приложением не установлено",
+      };
+      App.renderTabContent();
+      return;
+    }
+    // pywebview готов — продолжаем нормальный путь ниже
+    App.renderTabContent();
+  }
 
   // Pre-request script — ДО резолва переменных, чтобы скрипт мог
   // добавить/поменять переменные, заголовки и тело.
@@ -77,6 +96,11 @@ App.sendRequest = async function (tabId) {
   pick(tab.headers).forEach((h) => { headersObj[resolve(h.key).trim()] = resolve(h.value); });
   const paramsObj = {};
   pick(tab.params).forEach((p) => { paramsObj[resolve(p.key).trim()] = resolve(p.value); });
+
+  // Inject Auth headers / params
+  if (App.applyAuthToRequest) {
+    App.applyAuthToRequest(tab, headersObj, paramsObj, resolve);
+  }
 
   // Inject User-Agent if set
   if (tab.userAgent) {

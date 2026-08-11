@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Script Editor — TestSys</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link rel="stylesheet" href="css/theme-boot.css">
+  <script>
+    (function(){
+      try{
+        var m = getComputedStyle(document.documentElement)
+                  .getPropertyValue('--theme-mode').trim().replace(/["']/g,'');
+        if (m === 'light' || m === 'dark')
+          document.documentElement.setAttribute('data-bs-theme', m);
+      }catch(e){}
+    })();
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    :root {
+      --bg-app:     #14151a;
+      --bg-panel:   #1a1c22;
+      --bg-input:   #20232b;
+      --border-color: #2b2e38;
+      --text-main:  #e6e7eb;
+      --text-dim:   #8b8f9c;
+      --accent:     #6366f1;
+      --radius:     8px;
+      --radius-sm:  5px;
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: var(--bg-app);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Шапка ── */
+    #se-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border-color);
+      flex-shrink: 0;
+    }
+    #se-title {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #se-title i { color: var(--accent); font-size: 15px; }
+
+    .se-spacer { flex: 1; }
+
+    /* ── Тулбар ── */
+    #se-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border-color);
+      flex-shrink: 0;
+    }
+    .se-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+      background: var(--bg-input);
+      color: var(--text-main);
+      font-size: 12px;
+      cursor: pointer;
+      transition: background .15s;
+      white-space: nowrap;
+    }
+    .se-btn:hover { background: #2a2d37; }
+    .se-btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .se-btn.primary:hover { filter: brightness(1.1); }
+    .se-btn.danger { border-color: #ef4444; color: #ef4444; }
+    .se-btn.danger:hover { background: rgba(239,68,68,.15); }
+
+    #se-snippets {
+      padding: 3px 8px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+      background: var(--bg-input);
+      color: var(--text-main);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    #se-snippets:focus { outline: none; border-color: var(--accent); }
+
+    .se-label { color: var(--text-dim); font-size: 11px; }
+
+    /* ── Редактор ── */
+    #se-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 12px;
+      gap: 8px;
+      overflow: hidden;
+    }
+    #se-code {
+      flex: 1;
+      width: 100%;
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      color: var(--text-main);
+      font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.55;
+      padding: 12px 14px;
+      resize: none;
+      tab-size: 2;
+      transition: border-color .15s;
+    }
+    #se-code:focus { outline: none; border-color: var(--accent); }
+
+    /* ── Результат ── */
+    #se-result {
+      display: none;
+      max-height: 180px;
+      overflow-y: auto;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius);
+      padding: 8px 12px;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .sr-pass { color: #22c55e; }
+    .sr-fail { color: #ef4444; }
+    .sr-log  { color: var(--text-dim); }
+    .sr-summary { font-weight: 600; margin-top: 4px; }
+
+    /* ── Статус-бар внизу ── */
+    #se-footer {
+      padding: 4px 12px;
+      background: var(--bg-panel);
+      border-top: 1px solid var(--border-color);
+      font-size: 11px;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    #se-footer .saved-badge {
+      color: #22c55e;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="se-header">
+  <div id="se-title">
+    <i class="bi bi-code-square"></i>
+    <span id="se-title-text">Script Editor</span>
+  </div>
+  <div class="se-spacer"></div>
+  <button class="se-btn primary" id="se-save-btn" title="Ctrl+S">
+    <i class="bi bi-check-lg"></i> Сохранить
+  </button>
+  <button class="se-btn" id="se-save-close-btn" title="Сохранить и закрыть">
+    <i class="bi bi-box-arrow-right"></i> Сохранить и закрыть
+  </button>
+</div>
+
+<div id="se-toolbar">
+  <button class="se-btn" id="se-run-btn" title="Ctrl+Enter">
+    <i class="bi bi-play-fill"></i> Запустить
+  </button>
+  <button class="se-btn danger" id="se-clear-btn">
+    <i class="bi bi-trash3"></i> Очистить
+  </button>
+  <span class="se-label">Сниппеты:</span>
+  <select id="se-snippets">
+    <option value="">— выбрать —</option>
+  </select>
+</div>
+
+<div id="se-body">
+  <textarea id="se-code" spellcheck="false" placeholder="// Напишите скрипт здесь..."></textarea>
+  <div id="se-result"></div>
+</div>
+
+<div id="se-footer">
+  <span>Ctrl+Enter — запустить &nbsp;·&nbsp; Tab — отступ &nbsp;·&nbsp; Ctrl+S — сохранить</span>
+  <span class="se-spacer"></span>
+  <span id="se-saved-badge" class="saved-badge"><i class="bi bi-check-circle"></i> Сохранено</span>
+  <span id="se-lines">0 строк</span>
+</div>
+
+<script>
+// ================================================================
+//  ГЛОБАЛЬНОЕ СОСТОЯНИЕ
+// ================================================================
+let _tabId   = null;   // id вкладки в главном окне
+let _kind    = 'pre';  // 'pre' | 'tests'
+let _dirty   = false;  // были ли несохранённые изменения
+
+const PRE_SNIPPETS = [
+  { group: 'Переменные', label: 'Установить переменную', code: 'pm.variables.set("key", "value");' },
+  { group: 'Переменные', label: 'Получить переменную', code: 'const val = pm.variables.get("key");' },
+  { group: 'Заголовки запроса', label: 'Добавить заголовок', code: 'pm.request.headers.set("Authorization", "Bearer " + pm.variables.get("token"));' },
+  { group: 'Заголовки запроса', label: 'Удалить заголовок', code: 'pm.request.headers.delete("X-Debug");' },
+  { group: 'Тело запроса', label: 'Изменить тело', code: 'pm.request.body = JSON.stringify({ id: Date.now() });' },
+  { group: 'Утилиты', label: 'UUID', code: 'pm.variables.set("id", crypto.randomUUID());' },
+  { group: 'Утилиты', label: 'Timestamp', code: 'pm.variables.set("ts", new Date().toISOString());' },
+  { group: 'Утилиты', label: 'console.log', code: 'console.log(pm.variables.get("token"));' },
+];
+
+const TEST_SNIPPETS = [
+  { group: 'Статус', label: 'Статус 200', code: 'pm.test("Статус 200", () => pm.response.to.have.status(200));' },
+  { group: 'Статус', label: 'Статус 2xx', code: 'pm.test("Успешный ответ", () => {\n  expect(pm.response.status).toBeGreaterThanOrEqual(200);\n  expect(pm.response.status).toBeLessThan(300);\n});' },
+  { group: 'Тело', label: 'Поле существует', code: 'pm.test("Поле id существует", () => {\n  expect(pm.response.json().id).toBeDefined();\n});' },
+  { group: 'Тело', label: 'Значение поля', code: 'pm.test("Поле active = true", () => {\n  expect(pm.response.json().active).toBe(true);\n});' },
+  { group: 'Тело', label: 'Массив не пустой', code: 'pm.test("Список не пустой", () => {\n  expect(pm.response.json()).toHaveLength.greaterThan(0);\n});' },
+  { group: 'Время', label: 'Время ответа < 500мс', code: 'pm.test("Время ответа < 500мс", () => {\n  expect(pm.response.responseTime).toBeLessThan(500);\n});' },
+  { group: 'Переменные', label: 'Сохранить поле', code: 'pm.variables.set("lastId", pm.response.json().id);' },
+  { group: 'Переменные', label: 'Логировать ответ', code: 'console.log(JSON.stringify(pm.response.json(), null, 2));' },
+];
+
+// ================================================================
+//  ИНИЦИАЛИЗАЦИЯ (вызывается из Python после загрузки страницы)
+// ================================================================
+window.initScriptEditor = function({ tabId, kind, script, title }) {
+  _tabId = tabId;
+  _kind  = kind;
+
+  const ta = document.getElementById('se-code');
+  ta.value = script || '';
+  _updateLineCount();
+
+  // Заголовок
+  const icon = kind === 'pre' ? 'lightning' : 'check2-circle';
+  const label = kind === 'pre' ? 'Pre-request Script' : 'Tests';
+  document.getElementById('se-title-text').textContent = label + (title ? ' — ' + title : '');
+  document.querySelector('#se-title i').className = `bi bi-${icon}`;
+  document.title = label + ' — TestSys';
+
+  // Сниппеты
+  const snippets = kind === 'pre' ? PRE_SNIPPETS : TEST_SNIPPETS;
+  const sel = document.getElementById('se-snippets');
+  const groups = {};
+  snippets.forEach((s, i) => {
+    const g = s.group || '';
+    if (!groups[g]) groups[g] = [];
+    groups[g].push({ s, i });
+  });
+  Object.entries(groups).forEach(([g, items]) => {
+    let parent = sel;
+    if (g) {
+      const og = document.createElement('optgroup');
+      og.label = g;
+      sel.appendChild(og);
+      parent = og;
+    }
+    items.forEach(({ s, i }) => {
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = s.label;
+      parent.appendChild(opt);
+    });
+  });
+
+  ta.focus();
+};
+
+// ================================================================
+//  СОХРАНЕНИЕ
+// ================================================================
+function _save() {
+  const code = document.getElementById('se-code').value;
+  if (window.pywebview?.api?.update_script_from_editor) {
+    window.pywebview.api.update_script_from_editor(_tabId, _kind, code);
+  }
+  _dirty = false;
+  const badge = document.getElementById('se-saved-badge');
+  badge.style.display = 'inline';
+  setTimeout(() => { badge.style.display = 'none'; }, 1500);
+}
+
+function _saveAndClose() {
+  _save();
+  setTimeout(() => {
+    if (window.pywebview?.api?.close_script_editor) {
+      window.pywebview.api.close_script_editor();
+    }
+  }, 200);
+}
+
+// ================================================================
+//  ЗАПУСК СКРИПТА (упрощённый — запрашивает результат из главного окна)
+// ================================================================
+function _run() {
+  const code = document.getElementById('se-code').value.trim();
+  if (!code) return;
+  // Сначала сохраняем, потом главное окно запускает и шлёт нам результат
+  _save();
+  if (window.pywebview?.api?.run_script_from_editor) {
+    window.pywebview.api.run_script_from_editor(_tabId, _kind, code);
+  }
+}
+
+// Главное окно вернуло результат
+window.showScriptResult = function(results) {
+  const el = document.getElementById('se-result');
+  if (!results || !results.length) { el.style.display = 'none'; return; }
+
+  let html = '';
+  let passed = 0, failed = 0;
+
+  results.forEach(r => {
+    if (r.type === 'test') {
+      if (r.passed) {
+        passed++;
+        html += `<div class="sr-pass"><i class="bi bi-check-circle"></i> ${_esc(r.name)}</div>`;
+      } else {
+        failed++;
+        html += `<div class="sr-fail"><i class="bi bi-x-circle"></i> ${_esc(r.name)}${r.error ? ' — ' + _esc(r.error) : ''}</div>`;
+      }
+    } else if (r.type === 'log') {
+      html += `<div class="sr-log"><i class="bi bi-terminal"></i> ${_esc(String(r.value))}</div>`;
+    } else if (r.type === 'error') {
+      html += `<div class="sr-fail"><i class="bi bi-exclamation-triangle"></i> ${_esc(r.message)}</div>`;
+    }
+  });
+
+  if (passed || failed) {
+    const cls = failed ? 'sr-fail' : 'sr-pass';
+    html += `<div class="sr-summary ${cls}">${passed + failed} тестов: ${passed} ✓  ${failed} ✗</div>`;
+  }
+
+  el.innerHTML = html;
+  el.style.display = 'block';
+};
+
+// ================================================================
+//  ВСПОМОГАТЕЛЬНОЕ
+// ================================================================
+function _esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function _updateLineCount() {
+  const lines = (document.getElementById('se-code').value.match(/\n/g) || []).length + 1;
+  document.getElementById('se-lines').textContent = lines + ' ' + (lines === 1 ? 'строка' : 'строк');
+}
+
+// ================================================================
+//  СОБЫТИЯ
+// ================================================================
+document.addEventListener('DOMContentLoaded', () => {
+  const ta  = document.getElementById('se-code');
+  const sel = document.getElementById('se-snippets');
+
+  ta.addEventListener('input', () => {
+    _dirty = true;
+    document.getElementById('se-saved-badge').style.display = 'none';
+    _updateLineCount();
+  });
+
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      _run();
+      return;
+    }
+    if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      _save();
+      return;
+    }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const s = ta.selectionStart, en = ta.selectionEnd;
+      ta.value = ta.value.slice(0, s) + '  ' + ta.value.slice(en);
+      ta.selectionStart = ta.selectionEnd = s + 2;
+    }
+  });
+
+  sel.addEventListener('change', (e) => {
+    const kind = _kind === 'pre' ? PRE_SNIPPETS : TEST_SNIPPETS;
+    const i = +e.target.value;
+    if (isNaN(i) || !kind[i]) return;
+    const snippet = kind[i];
+    const start = ta.selectionStart ?? ta.value.length;
+    const end   = ta.selectionEnd   ?? start;
+    const before = ta.value.slice(0, start);
+    const after  = ta.value.slice(end);
+    const prefix = before.trimEnd().length ? '\n\n' : '';
+    const suffix = after.trimStart().length ? '\n\n' : '';
+    ta.value = before.trimEnd() + prefix + snippet.code + suffix + after.trimStart();
+    const cur = before.trimEnd().length + prefix.length + snippet.code.length;
+    ta.selectionStart = ta.selectionEnd = cur;
+    ta.focus();
+    _dirty = true;
+    e.target.value = '';
+    _updateLineCount();
+  });
+
+  document.getElementById('se-save-btn').addEventListener('click', _save);
+  document.getElementById('se-save-close-btn').addEventListener('click', _saveAndClose);
+  document.getElementById('se-run-btn').addEventListener('click', _run);
+
+  document.getElementById('se-clear-btn').addEventListener('click', () => {
+    if (ta.value.trim() && !confirm('Очистить весь скрипт?')) return;
+    ta.value = '';
+    _dirty = true;
+    document.getElementById('se-result').style.display = 'none';
+    _updateLineCount();
+  });
+});
+</script>
+</body>
+</html>

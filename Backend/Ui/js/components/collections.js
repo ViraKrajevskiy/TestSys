@@ -672,31 +672,47 @@ window.App = window.App || {};
     const el = document.createElement("div");
     el.className = "sb-item";
 
-    // Drag & drop — только для пользовательских коллекций
     if (isUser) {
-      el.draggable = true;
-      el.dataset.dndCol  = collection.name;
+      el.dataset.dndCol    = collection.name;
       el.dataset.dndFolder = folder.name;
-      el.dataset.dndIdx  = itemIdx;
+      el.dataset.dndIdx    = itemIdx;
+    }
+
+    const colorVar = App.METHOD_COLOR_VAR[entry.method] || "--text-dim";
+    const nameHtml = q ? _highlight(App.escapeHtml(entry.name), q) : App.escapeHtml(entry.name);
+    el.innerHTML = `
+      ${isUser ? '<div class="sb-drag-handle" title="Перетащить">⠿</div>' : ''}
+      <div class="sb-item-main">
+        <span class="sb-method" style="color:var(${colorVar});border-color:var(${colorVar});">${entry.method}</span>
+        <span class="sb-item-name">${nameHtml}</span>
+      </div>
+      <div class="sb-actions"></div>`;
+
+    // Drag & drop: только через ручку, не через весь элемент.
+    // Это исправляет «первый клик не срабатывает» — раньше draggable=true
+    // на всём sb-item съедал click при малейшем движении мыши.
+    if (isUser) {
+      const handle = el.querySelector(".sb-drag-handle");
+      handle.addEventListener("mousedown", () => {
+        el.draggable = true;
+      });
+      document.addEventListener("mouseup", () => {
+        el.draggable = false;
+      }, { capture: true, once: true });
 
       el.addEventListener("dragstart", e => {
+        if (!el.draggable) { e.preventDefault(); return; }
         e.dataTransfer.effectAllowed = "move";
         e.dataTransfer.setData("text/plain", JSON.stringify({
           colName: collection.name, folderName: folder.name, itemIdx,
         }));
         el.classList.add("sb-dragging");
       });
-      el.addEventListener("dragend", () => el.classList.remove("sb-dragging"));
+      el.addEventListener("dragend", () => {
+        el.draggable = false;
+        el.classList.remove("sb-dragging");
+      });
     }
-
-    const colorVar = App.METHOD_COLOR_VAR[entry.method] || "--text-dim";
-    const nameHtml = q ? _highlight(App.escapeHtml(entry.name), q) : App.escapeHtml(entry.name);
-    el.innerHTML = `
-      <div class="sb-item-main">
-        <span class="sb-method" style="color:var(${colorVar});border-color:var(${colorVar});">${entry.method}</span>
-        <span class="sb-item-name">${nameHtml}</span>
-      </div>
-      <div class="sb-actions"></div>`;
 
     el.querySelector(".sb-item-main").addEventListener("click", () => {
       const overrides = {
@@ -814,8 +830,19 @@ window.App = window.App || {};
       const mw = 210;
       let left = r.right - mw;
       if (left < 4) left = 4;
-      let top = r.bottom + 4;
-      menu.style.cssText = `position:fixed;z-index:10000;width:${mw}px;top:${top}px;left:${left}px;`;
+
+      // Сначала рендерим скрыто, чтобы узнать реальную высоту меню
+      menu.style.cssText = `position:fixed;z-index:10000;width:${mw}px;visibility:hidden;top:0;left:-9999px;`;
+      requestAnimationFrame(() => {
+        const mh = menu.offsetHeight || 200;
+        const pad = 6;
+        let top = r.bottom + 4;
+        // Не влезает вниз — открываем вверх
+        if (top + mh + pad > window.innerHeight) top = r.top - mh - 4;
+        // Совсем мало места сверху тоже — прижимаем к низу экрана
+        if (top < pad) top = window.innerHeight - mh - pad;
+        menu.style.cssText = `position:fixed;z-index:10000;width:${mw}px;top:${top}px;left:${left}px;`;
+      });
 
       requestAnimationFrame(() => {
         const _close = (ev) => {

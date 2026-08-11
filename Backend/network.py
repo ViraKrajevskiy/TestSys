@@ -108,12 +108,22 @@ def send_http_request(
             stream=True,   # чтобы контролировать размер ответа
             allow_redirects=True,
         )
+        # TTFB — время до первого байта (headers received)
+        ttfb_ms = round((time.time() - start) * 1000)
+
+        dl_start = time.time()
+        content = resp.content[:MAX_RESPONSE]
+        dl_ms = round((time.time() - dl_start) * 1000)
+
         elapsed_ms = round((time.time() - start) * 1000)
 
-        content = resp.content[:MAX_RESPONSE]
         text = content.decode("utf-8", errors="replace")
         if len(resp.content) > MAX_RESPONSE:
             text += f"\n\n... [ответ обрезан: >{MAX_RESPONSE // (1024*1024)} МБ]"
+
+        # DNS + connect уже произошли — urllib3 не даёт их отдельно,
+        # но resp.elapsed даёт время от отправки запроса до первого байта ответа
+        connect_ms = round(resp.elapsed.total_seconds() * 1000) if resp.elapsed else ttfb_ms
 
         return {
             "ok": True,
@@ -122,6 +132,12 @@ def send_http_request(
             "text": text,
             "headers": dict(resp.headers),
             "elapsed_ms": elapsed_ms,
+            "timing": {
+                "total": elapsed_ms,
+                "ttfb": connect_ms,     # time to first byte (server processing)
+                "download": dl_ms,      # content download
+                "size": len(content),   # response body size in bytes
+            },
         }
 
     except requests.exceptions.MissingSchema:

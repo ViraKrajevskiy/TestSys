@@ -42,29 +42,33 @@
     <button id="return-to-main-btn" class="nav-bar-btn" data-i18n-title="navReturn" title="Вернуть вкладку в главное окно" style="display:none;">
       <i class="bi bi-box-arrow-in-left"></i>
     </button>
-    <button id="data-generator-btn" class="nav-bar-btn" data-i18n-title="navGenerator" title="Генератор тестовых данных" onclick="Generator.showModal()">
-      <i class="bi bi-shuffle"></i>
-    </button>
-    <button id="randomizer-btn" class="nav-bar-btn" data-i18n-title="navRandomizer" title="Рандомайзер" onclick="UnifiedRandomizer.toggle()">
-      <i class="bi bi-dice-5"></i>
-    </button>
-    <button id="users-btn" class="nav-bar-btn" data-i18n-title="navUsers" title="Управление пользователями" onclick="App.openUsersTab()">
-      <i class="bi bi-people"></i>
-    </button>
-    <button id="theme-settings-btn" class="nav-bar-btn" data-i18n-title="navTheme" title="Настроить тему">
-      <i class="bi bi-palette"></i>
-    </button>
-    <button id="sync-btn" class="nav-bar-btn" data-i18n-title="navSync" title="Совместная работа">
-      <i class="bi bi-hdd"></i>
-    </button>
-    <button id="terminal-btn" class="nav-bar-btn" data-i18n-title="terminal" title="Терминал (Ctrl+`)"><i class="bi bi-terminal"></i></button>
+
+    <!-- ── Основные кнопки (всегда видны) ── -->
     <button id="collection-runner-btn" class="nav-bar-btn" title="Collection Runner" onclick="App.showCollectionRunner()"><i class="bi bi-play-circle"></i></button>
-    <button id="cookie-manager-btn" class="nav-bar-btn" title="Cookie Manager" onclick="App.showCookieManager()"><i class="bi bi-cookie"></i></button>
     <button id="load-test-btn" class="nav-bar-btn" title="Нагрузочное тестирование" data-i18n-title="loadTest"><i class="bi bi-lightning-charge"></i></button>
     <button id="par-test-btn" class="nav-bar-btn" title="Параллельные тесты" data-i18n-title="parallelTests"><i class="bi bi-diagram-3"></i></button>
-    <button id="metrics-btn" class="nav-bar-btn" data-i18n-title="navMetrics" title="Метрики запросов">
-      <i class="bi bi-graph-up"></i>
-    </button>
+    <button id="metrics-btn" class="nav-bar-btn" data-i18n-title="navMetrics" title="Метрики запросов"><i class="bi bi-graph-up"></i></button>
+
+    <!-- ── Разделитель ── -->
+    <div class="navbar-sep"></div>
+
+    <!-- ── Меню "ещё" для редких инструментов ── -->
+    <div class="nav-more-wrap" id="nav-more-wrap">
+      <button id="nav-more-btn" class="nav-bar-btn" title="Ещё инструменты">
+        <i class="bi bi-three-dots"></i>
+      </button>
+      <!-- Скрытые кнопки — в DOM чтобы их id работали, но невидимы -->
+      <div id="nav-more-hidden" style="display:none;">
+        <button id="data-generator-btn" data-i18n-title="navGenerator" title="Генератор тестовых данных" onclick="Generator.showModal()"><i class="bi bi-shuffle"></i> Генератор данных</button>
+        <button id="randomizer-btn" data-i18n-title="navRandomizer" title="Рандомайзер" onclick="UnifiedRandomizer.toggle()"><i class="bi bi-dice-5"></i> Рандомайзер</button>
+        <button id="users-btn" data-i18n-title="navUsers" title="Управление пользователями" onclick="App.openUsersTab()"><i class="bi bi-people"></i> Пользователи</button>
+        <button id="cookie-manager-btn" title="Cookie Manager" onclick="App.showCookieManager()"><i class="bi bi-cookie"></i> Cookie Manager</button>
+        <button id="sync-btn" data-i18n-title="navSync" title="Совместная работа"><i class="bi bi-hdd"></i> Совместная работа</button>
+        <button id="terminal-btn" data-i18n-title="terminal" title="Терминал (Ctrl+`)"><i class="bi bi-terminal"></i> Терминал</button>
+        <button id="theme-settings-btn" data-i18n-title="navTheme" title="Настроить тему"><i class="bi bi-palette"></i> Тема</button>
+      </div>
+    </div>
+
     <button id="settings-btn" class="nav-bar-btn" data-i18n-title="navSettings" title="Настройки проекта">
       <i class="bi bi-gear"></i>
     </button>
@@ -228,6 +232,8 @@
 <script src="js/features/dataGenerator.js"></script>
 <script src="js/features/codeGen.js"></script>
 <script src="js/features/collectionRunner.js"></script>
+<script src="js/features/authTab.js"></script>
+<script src="js/features/navbarMore.js"></script>
 <script src="js/features/cookieManager.js"></script>
 <script src="js/components/tabBar.js"></script>
 <script src="js/components/tabContent.js"></script>

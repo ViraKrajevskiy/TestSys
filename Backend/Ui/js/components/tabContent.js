@@ -42,6 +42,9 @@ window.App = window.App || {};
         <li class="nav-item"><button class="nav-link ${sub("headers")}" data-sub="headers">${App.t("headers")}</button></li>
         ${hasBodyMethod ? '<li class="nav-item"><button class="nav-link ' + sub("body") + '" data-sub="body">' + App.t("body") + '</button></li>' : ""}
         ${hasBodyMethod ? '<li class="nav-item"><button class="nav-link ' + sub("files") + '" data-sub="files">' + App.t("files") + ((tab.files && tab.files.length) ? ' <span class="sub-dot">●</span>' : "") + '</button></li>' : ""}
+        <li class="nav-item"><button class="nav-link ${sub("auth")}" data-sub="auth">
+          Auth${App.authHasBadge && App.authHasBadge(tab) ? ' <span class="sub-dot">●</span>' : ""}
+        </button></li>
         <li class="nav-item"><button class="nav-link ${sub("pre")}" data-sub="pre">
           ${App.t("preRequest")}${tab.preScript ? ' <span class="sub-dot">●</span>' : ""}
         </button></li>
@@ -107,6 +110,16 @@ window.App = window.App || {};
     // Справочник динамических переменных для URL
     document.getElementById("url-dynvar-btn")?.addEventListener("click", () => {
       App.showDynamicVars(document.getElementById("url-input"));
+    });
+
+    // --- User-Agent toggle ---
+    document.getElementById("ua-toggle-btn")?.addEventListener("click", () => {
+      const fields  = document.getElementById("ua-fields");
+      const chevron = document.getElementById("ua-chevron");
+      const open = fields.style.display === "none";
+      fields.style.display  = open ? "" : "none";
+      chevron.className = open ? "bi bi-chevron-down" : "bi bi-chevron-right";
+      if (open) fields.style.cssText = "display:flex;gap:6px;align-items:center;margin-top:4px;";
     });
 
     // --- User-Agent select ---
@@ -190,6 +203,12 @@ window.App = window.App || {};
 
   App.renderSubTabContent = function (tab) {
     const container = document.getElementById("sub-tab-content");
+
+    // ---- Auth ----
+    if (tab.activeSubTab === "auth") {
+      if (App.renderAuthTab) App.renderAuthTab(container, tab);
+      return;
+    }
 
     // ---- Pre-request / Tests: редакторы скриптов ----
     if (tab.activeSubTab === "pre" || tab.activeSubTab === "tests") {
@@ -569,6 +588,10 @@ window.App = window.App || {};
               }).join("");
             })()}
           </select>
+          <span style="flex:1"></span>
+          <button class="script-btn" id="script-popout" title="Открыть в отдельном окне" style="margin-left:auto;gap:4px;">
+            <i class="bi bi-box-arrow-up-right"></i> Открыть отдельно
+          </button>
         </div>
 
         <textarea id="script-code" class="script-code" spellcheck="false"
@@ -626,9 +649,54 @@ window.App = window.App || {};
       document.getElementById("script-result").style.display = "none";
     });
 
+    // Кнопка «Открыть отдельно»
+    document.getElementById("script-popout")?.addEventListener("click", () => {
+      if (!window.pywebview?.api?.open_script_editor_window) {
+        App.showAlert("Редактор в отдельном окне доступен только в desktop-приложении.");
+        return;
+      }
+      const tabTitle = tab.url ? tab.url.replace(/^https?:\/\//, "").slice(0, 40) : "";
+      window.pywebview.api.open_script_editor_window(tab.id, kind, tab[field] || "", tabTitle);
+    });
+
     // Показать результаты последних тестов, если они есть
     if (kind === "tests" && tab.lastTests) _showScriptResult(tab.lastTests);
   }
+
+  // ── Получить обновлённый скрипт из окна редактора ──────────────
+  window.receiveScriptFromEditor = function({ tabId, kind, script }) {
+    const tab = App.state.tabs.find(t => t.id === tabId);
+    if (!tab) return;
+    const field = kind === "pre" ? "preScript" : "testScript";
+    tab[field] = script;
+    // Перерисовать суб-таб только если он сейчас активен
+    const activeTab = App.getActiveTab();
+    if (activeTab && activeTab.id === tabId &&
+        ((kind === "pre" && activeTab.activeSubTab === "pre") ||
+         (kind === "tests" && activeTab.activeSubTab === "tests"))) {
+      App.renderSubTabContent(tab);
+    }
+    App.renderTabBar(); // обновить значок ●
+  };
+
+  // ── Запустить скрипт из окна редактора и вернуть результат ─────
+  window.runScriptFromEditor = function({ tabId, kind, script }) {
+    const tab = App.state.tabs.find(t => t.id === tabId);
+    const field = kind === "pre" ? "preScript" : "testScript";
+    if (tab) tab[field] = script; // синхронизируем перед запуском
+
+    const opts = { source: kind === "pre" ? "pre" : "test", tab: tab || {} };
+    if (kind === "tests" && tab?.response?.ok) opts.response = tab.response;
+    const res = App.runScript(script, opts);
+    if (kind === "tests" && tab) tab.lastTests = res;
+
+    // Возвращаем результат в окно редактора через Python-мост
+    const resJson = JSON.stringify(res || []);
+    // Найти дочернее окно редактора через api (pywebview не даёт прямого JS-доступа)
+    if (window.pywebview?.api?.script_editor_result) {
+      window.pywebview.api.script_editor_result(resJson);
+    }
+  };
 
   const PRE_EXAMPLE = `// Выполняется перед отправкой запроса
 // Примеры:
