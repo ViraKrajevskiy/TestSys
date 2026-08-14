@@ -627,6 +627,12 @@ window.App = window.App || {};
         e.stopPropagation();
         _editRequestDialog(folder, -1);
       }, "accent");
+      _addAction(actions,
+        App.authIsFilled && App.authIsFilled(folder.auth) ? "bi-shield-lock-fill" : "bi-shield-lock",
+        "Авторизация папки", (e) => {
+          e.stopPropagation();
+          App.showAuthEditor(folder, "folder");
+        });
       _addAction(actions, "bi-pencil", App.t("rename"), async (e) => {
         e.stopPropagation();
         const n = await App.showPrompt({ title: App.t("rename"), label: App.t("newFolderName"), value: folder.name });
@@ -721,6 +727,18 @@ window.App = window.App || {};
         crudEntity: folder.entity || null,
         crudAction: entry.crud || null,
         schema: entry.schema || null,
+        // Привязка к родителю — по ней работает наследование авторизации
+        // (запрос → папка → коллекция).
+        collectionName: collection.name,
+        folderName: folder.name,
+        requestName: entry.name,
+        // Сохранённая на самом запросе авторизация в приоритете; если её нет —
+        // по умолчанию наследуем от родителя, как в Postman.
+        auth: entry.auth || (App.defaultAuth ? App.defaultAuth("inherit") : undefined),
+        // Скрипты живут вместе с запросом: иначе Tests-скрипт, который
+        // кладёт токен в переменную, приходилось бы вписывать каждый раз.
+        preScript: entry.preScript || "",
+        testScript: entry.testScript || "",
       };
       if (entry.body) { overrides.body = entry.body; overrides.activeSubTab = "body"; }
       if (["POST", "PUT", "PATCH"].includes(entry.method)) overrides.activeSubTab = "body";
@@ -771,6 +789,12 @@ window.App = window.App || {};
       const menuItems = [];
 
       if (isUser) {
+        menuItems.push({
+          icon: "bi-shield-lock",
+          label: "Авторизация" + (App.authIsFilled && App.authIsFilled(collection.auth)
+            ? " · " + App.authSummary(collection.auth).split(" ·")[0] : ""),
+          on: () => App.showAuthEditor(collection, "collection"),
+        });
         menuItems.push({
           icon: "bi-copy", label: "Дублировать",
           on: () => App.duplicateCollection(userIdx),

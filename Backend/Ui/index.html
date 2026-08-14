@@ -43,6 +43,14 @@
       <i class="bi bi-box-arrow-in-left"></i>
     </button>
 
+    <!-- ── Рандомайзеры — используются постоянно, поэтому всегда на виду ── -->
+    <button id="randomizer-btn" class="nav-bar-btn nav-btn-accent" data-i18n-title="navRandomizer"
+            title="Рандомайзер (Ctrl+R)" onclick="UnifiedRandomizer.toggle()"><i class="bi bi-dice-5"></i></button>
+    <button id="data-generator-btn" class="nav-bar-btn nav-btn-accent" data-i18n-title="navGenerator"
+            title="Генератор тестовых данных (Ctrl+G)" onclick="Generator.showModal()"><i class="bi bi-shuffle"></i></button>
+
+    <div class="navbar-sep"></div>
+
     <!-- ── Основные кнопки (всегда видны) ── -->
     <button id="collection-runner-btn" class="nav-bar-btn" title="Collection Runner" onclick="App.showCollectionRunner()"><i class="bi bi-play-circle"></i></button>
     <button id="load-test-btn" class="nav-bar-btn" title="Нагрузочное тестирование" data-i18n-title="loadTest"><i class="bi bi-lightning-charge"></i></button>
@@ -59,8 +67,6 @@
       </button>
       <!-- Скрытые кнопки — в DOM чтобы их id работали, но невидимы -->
       <div id="nav-more-hidden" style="display:none;">
-        <button id="data-generator-btn" data-i18n-title="navGenerator" title="Генератор тестовых данных" onclick="Generator.showModal()"><i class="bi bi-shuffle"></i> Генератор данных</button>
-        <button id="randomizer-btn" data-i18n-title="navRandomizer" title="Рандомайзер" onclick="UnifiedRandomizer.toggle()"><i class="bi bi-dice-5"></i> Рандомайзер</button>
         <button id="users-btn" data-i18n-title="navUsers" title="Управление пользователями" onclick="App.openUsersTab()"><i class="bi bi-people"></i> Пользователи</button>
         <button id="cookie-manager-btn" title="Cookie Manager" onclick="App.showCookieManager()"><i class="bi bi-cookie"></i> Cookie Manager</button>
         <button id="sync-btn" data-i18n-title="navSync" title="Совместная работа"><i class="bi bi-hdd"></i> Совместная работа</button>

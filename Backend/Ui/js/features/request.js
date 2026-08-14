@@ -1,8 +1,11 @@
 window.App = window.App || {};
 
-App.sendRequest = async function (tabId) {
+App.sendRequest = async function (tabId, opts) {
   const tab = App.state.tabs.find((t) => t.id === tabId);
   if (!tab || !tab.url.trim()) return;
+
+  // Повторный заход после авто-обновления токена — чтобы не зациклиться
+  const _authRetried = !!(opts && opts._authRetried);
 
   // Если pywebview ещё не готов (первые ~500мс после старта) —
   // ждём до 5 секунд вместо тихого return.
@@ -151,6 +154,21 @@ App.sendRequest = async function (tabId) {
     App.logError && App.logError("Request", `${tab.method} ${finalUrl} — ${err}`,
       err && err.stack ? err.stack : "");
   }
+
+  // ── Авто-обновление токена при 401 ──────────────────────────────────────
+  // Токен живёт недолго, и раньше приходилось вручную идти на login.
+  // Если у коллекции настроен refresh — дёргаем его и повторяем запрос.
+  // _authRetried не даёт зациклиться, если refresh тоже отдаёт 401.
+  if (!_authRetried && tab.response && tab.response.ok && tab.response.status_code === 401
+      && App.tryRefreshToken) {
+    const refreshed = await App.tryRefreshToken(tab);
+    if (refreshed) {
+      tab.sending = false;
+      App.logWarn && App.logWarn("Auth", "Получен 401 — токен обновлён, повторяю запрос");
+      return App.sendRequest(tabId, { _authRetried: true });
+    }
+  }
+
   tab.sending = false;
 
   // История ответов: держим последние N — часто нужно «а что было 3 запроса назад».

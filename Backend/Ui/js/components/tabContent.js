@@ -98,7 +98,7 @@ window.App = window.App || {};
 
     const urlInput = document.getElementById("url-input");
     urlInput.maxLength = App.LIMITS.MAX_URL_LENGTH;
-    urlInput.addEventListener("input", (e) => { tab.url = e.target.value; });
+    urlInput.addEventListener("input", (e) => { tab.url = e.target.value; App.saveSession && App.saveSession(); });
     urlInput.addEventListener("change", () => App.renderTabBar());
     urlInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") App.sendRequest(tab.id);
@@ -153,7 +153,7 @@ window.App = window.App || {};
         tab.userAgent = e.target.value;
       }
     });
-    uaCustom.addEventListener("input", (e) => { tab.userAgent = e.target.value; });
+    uaCustom.addEventListener("input", (e) => { tab.userAgent = e.target.value; App.saveSession && App.saveSession(); });
 
     root.querySelectorAll("[data-sub]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -241,6 +241,7 @@ window.App = window.App || {};
           App.showAlert(`${App.t("bodyTruncated")} ${(App.LIMITS.MAX_BODY_LENGTH / 1000).toFixed(0)} ${App.t("kb")}`);
         }
         tab.body = e.target.value;
+        App.saveSession && App.saveSession();
         _updateBodyDynPreview(tab);
       });
 
@@ -601,7 +602,7 @@ window.App = window.App || {};
       </div>`;
 
     const ta = document.getElementById("script-code");
-    ta.addEventListener("input", (e) => { tab[field] = e.target.value; });
+    ta.addEventListener("input", (e) => { tab[field] = e.target.value; App.saveSession && App.saveSession(); });
     // Горячие клавиши редактора
     ta.addEventListener("keydown", (e) => {
       // Ctrl+Enter / Cmd+Enter — запустить скрипт
@@ -966,6 +967,416 @@ window.App = window.App || {};
     return (rows || []).filter(r => r.enabled !== false && (r.key || "").trim());
   };
 
+  // ────────────────────────────────────────────────────────────────
+  // Кликабельный JSON-ответ: клик по значению (или ключу) копирует
+  // его в буфер. Строки копируются БЕЗ кавычек — токен можно сразу
+  // вставлять в поле Bearer.
+  // ────────────────────────────────────────────────────────────────
+
+  // На гигантских ответах DOM из тысяч спанов тормозит — выше лимита
+  // показываем обычный текст.
+  const JSON_INTERACTIVE_MAX = 500 * 1024;
+
+  App.copyText = function (text) {
+    const s = String(text);
+    const fallback = () => {
+      const ta = document.createElement("textarea");
+      ta.value = s;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch { /* ничего */ }
+      ta.remove();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(s).catch(fallback);
+    }
+    fallback();
+    return Promise.resolve();
+  };
+
+  function _copyFlash(x, y, el) {
+    if (el) {
+      el.classList.add("jv-copied");
+      setTimeout(() => el.classList.remove("jv-copied"), 600);
+    }
+    const b = document.createElement("div");
+    b.className = "copy-flash";
+    b.textContent = App.t ? App.t("copied") : "Скопировано!";
+    b.style.left = x + "px";
+    b.style.top = (y - 30) + "px";
+    document.body.appendChild(b);
+    setTimeout(() => b.remove(), 900);
+  }
+
+  function _plural(n, forms) {
+    const n10 = n % 10, n100 = n % 100;
+    if (n10 === 1 && n100 !== 11) return forms[0];
+    if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return forms[1];
+    return forms[2];
+  }
+
+  function _jsonLeaf(parent, v, path) {
+    const span = document.createElement("span");
+    if (typeof v === "string") {
+      span.className = "jv jv-str";
+      span.textContent = JSON.stringify(v);
+      span.dataset.copy = v; // строка — без кавычек
+    } else if (typeof v === "number") {
+      span.className = "jv jv-num";
+      span.textContent = String(v);
+      span.dataset.copy = String(v);
+    } else if (typeof v === "boolean") {
+      span.className = "jv jv-bool";
+      span.textContent = String(v);
+      span.dataset.copy = String(v);
+    } else { // null
+      span.className = "jv jv-null";
+      span.textContent = "null";
+      span.dataset.copy = "null";
+    }
+    if (path) span.dataset.path = path;
+    span.title = (App.t ? App.t("copy") : "Копировать") + " · ПКМ — ещё действия";
+    parent.appendChild(span);
+  }
+
+  /**
+   * Сворачиваемый узел (объект или массив).
+   * В свёрнутом виде показывает, сколько внутри элементов — иначе по
+   * большому ответу непонятно, что прячется за «…».
+   */
+  function _jsonContainer(parent, v, indent, path) {
+    const isArr = Array.isArray(v);
+    const keys = isArr ? v.map((_, i) => i) : Object.keys(v);
+    const open = isArr ? "[" : "{";
+    const close = isArr ? "]" : "}";
+    const pad = "  ".repeat(indent);
+    const padIn = "  ".repeat(indent + 1);
+
+    if (!keys.length) { parent.append(open + close); return; }
+
+    const node = document.createElement("span");
+    node.className = "jnode";
+
+    const toggle = document.createElement("span");
+    toggle.className = "jtoggle";
+    toggle.textContent = "▾";
+    toggle.title = "Свернуть / развернуть";
+    node.appendChild(toggle);
+    node.append(open);
+
+    const summary = document.createElement("span");
+    summary.className = "jsummary";
+    summary.textContent = isArr
+      ? ` … ${keys.length} ${_plural(keys.length, ["элемент", "элемента", "элементов"])} `
+      : ` … ${keys.length} ${_plural(keys.length, ["поле", "поля", "полей"])} `;
+    summary.style.display = "none";
+    node.appendChild(summary);
+
+    const body = document.createElement("span");
+    body.className = "jbody";
+    body.append("\n");
+    keys.forEach((k, i) => {
+      body.append(padIn);
+      const childPath = isArr
+        ? `${path || ""}[${k}]`
+        : (path ? `${path}.${k}` : String(k));
+      if (!isArr) {
+        const ks = document.createElement("span");
+        ks.className = "jv jk";
+        ks.textContent = JSON.stringify(k);
+        ks.dataset.copy = k;             // клик по ключу — копирует имя ключа
+        ks.dataset.path = childPath;
+        ks.title = "Копировать имя поля";
+        body.appendChild(ks);
+        body.append(": ");
+      }
+      _jsonDom(body, v[k], indent + 1, childPath);
+      body.append((i < keys.length - 1 ? "," : "") + "\n");
+    });
+    body.append(pad);
+    node.appendChild(body);
+    node.append(close);
+    parent.appendChild(node);
+
+    toggle.addEventListener("click", (e) => {
+      e.stopPropagation();
+      _setCollapsed(node, body.style.display !== "none");
+    });
+  }
+
+  function _setCollapsed(node, collapse) {
+    const body = node.querySelector(":scope > .jbody");
+    const summary = node.querySelector(":scope > .jsummary");
+    const toggle = node.querySelector(":scope > .jtoggle");
+    if (!body) return;
+    body.style.display = collapse ? "none" : "";
+    if (summary) summary.style.display = collapse ? "" : "none";
+    if (toggle) toggle.textContent = collapse ? "▸" : "▾";
+  }
+
+  function _jsonDom(parent, v, indent, path) {
+    if (v !== null && typeof v === "object") {
+      _jsonContainer(parent, v, indent, path);
+      return;
+    }
+    _jsonLeaf(parent, v, path);
+  }
+
+  // ── Контекстное меню значения ────────────────────────────────────
+
+  function _closeJsonMenu() {
+    document.querySelectorAll(".json-ctx-menu").forEach(m => m.remove());
+  }
+
+  function _openJsonMenu(x, y, target) {
+    _closeJsonMenu();
+    const value = target.dataset.copy !== undefined ? target.dataset.copy : target.textContent;
+    const path  = target.dataset.path || "";
+
+    const items = [
+      { icon: "bi-clipboard", label: "Копировать значение",
+        on: () => App.copyText(value) },
+    ];
+    if (path) {
+      items.push({ icon: "bi-signpost-split", label: `Копировать путь · ${path}`,
+        on: () => App.copyText(path) });
+    }
+    items.push({ icon: "bi-braces", label: "Сохранить в переменную…",
+      on: () => _saveToVariable(value, path) });
+
+    const menu = document.createElement("div");
+    menu.className = "json-ctx-menu sb-pos-menu";
+    items.forEach(it => {
+      const b = document.createElement("button");
+      b.className = "sb-pos-item";
+      b.innerHTML = `<i class="bi ${it.icon}"></i><span>${App.escapeHtml(it.label)}</span>`;
+      b.addEventListener("click", () => { _closeJsonMenu(); it.on(); });
+      menu.appendChild(b);
+    });
+    document.body.appendChild(menu);
+
+    const mw = 260;
+    menu.style.cssText = `position:fixed;z-index:10000;width:${mw}px;visibility:hidden;top:0;left:-9999px;`;
+    requestAnimationFrame(() => {
+      const mh = menu.offsetHeight || 120;
+      let top = y, left = Math.min(x, window.innerWidth - mw - 6);
+      if (top + mh + 6 > window.innerHeight) top = Math.max(6, y - mh);
+      menu.style.cssText = `position:fixed;z-index:10000;width:${mw}px;top:${top}px;left:${left}px;`;
+    });
+
+    requestAnimationFrame(() => {
+      const off = (ev) => {
+        if (!menu.contains(ev.target)) { _closeJsonMenu(); document.removeEventListener("mousedown", off, true); }
+      };
+      document.addEventListener("mousedown", off, true);
+    });
+  }
+
+  /** Кладёт значение из ответа в переменную — {{token}} и подобные. */
+  async function _saveToVariable(value, path) {
+    // Имя по умолчанию — последний сегмент пути: user.email → email
+    const guess = (path || "").split(/[.\[\]]+/).filter(Boolean).pop() || "value";
+    const name = await App.showPrompt({
+      title: "Сохранить в переменную",
+      label: "Имя переменной",
+      value: guess,
+      hint: "Использовать потом как {{" + guess + "}}",
+    });
+    if (!name) return;
+    App.VARIABLES[name] = String(value);
+    App.saveCollections && App.saveCollections();
+    App.renderCollections && App.renderCollections();
+    App.showAlert && App.showAlert(`✓ {{${name}}} = ${String(value).slice(0, 40)}${String(value).length > 40 ? "…" : ""}`);
+  }
+
+  // ── Поиск по ответу (Ctrl+F) ─────────────────────────────────────
+
+  let _searchHits = [];
+  let _searchIdx = -1;
+
+  function _clearSearch(root) {
+    root.querySelectorAll("mark.jhit").forEach(m => {
+      const t = document.createTextNode(m.textContent);
+      m.replaceWith(t);
+    });
+    root.normalize();
+    _searchHits = [];
+    _searchIdx = -1;
+  }
+
+  function _runSearch(root, query) {
+    _clearSearch(root);
+    if (!query) return 0;
+    const q = query.toLowerCase();
+
+    // Собираем текстовые узлы заранее: правка DOM во время обхода
+    // ломает TreeWalker.
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+    const nodes = [];
+    let n;
+    while ((n = walker.nextNode())) if (n.nodeValue && n.nodeValue.trim()) nodes.push(n);
+
+    nodes.forEach(node => {
+      const text = node.nodeValue;
+      const lower = text.toLowerCase();
+      if (!lower.includes(q)) return;
+      const frag = document.createDocumentFragment();
+      let pos = 0, i;
+      while ((i = lower.indexOf(q, pos)) !== -1) {
+        if (i > pos) frag.append(text.slice(pos, i));
+        const mark = document.createElement("mark");
+        mark.className = "jhit";
+        mark.textContent = text.slice(i, i + q.length);
+        frag.appendChild(mark);
+        pos = i + q.length;
+      }
+      if (pos < text.length) frag.append(text.slice(pos));
+      node.replaceWith(frag);
+    });
+
+    _searchHits = Array.from(root.querySelectorAll("mark.jhit"));
+    // Совпадение может лежать в свёрнутом узле — раскрываем предков
+    _searchHits.forEach(h => {
+      let p = h.parentElement;
+      while (p && p !== root) {
+        if (p.classList.contains("jbody") && p.style.display === "none") {
+          _setCollapsed(p.parentElement, false);
+        }
+        p = p.parentElement;
+      }
+    });
+    if (_searchHits.length) _gotoHit(0);
+    return _searchHits.length;
+  }
+
+  function _gotoHit(i) {
+    if (!_searchHits.length) return;
+    _searchHits.forEach(h => h.classList.remove("jhit-active"));
+    _searchIdx = (i + _searchHits.length) % _searchHits.length;
+    const el = _searchHits[_searchIdx];
+    el.classList.add("jhit-active");
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
+  /** Панель поиска над телом ответа. */
+  function _buildSearchBar(bodyEl) {
+    const bar = document.createElement("div");
+    bar.className = "resp-search";
+    bar.innerHTML = `
+      <i class="bi bi-search"></i>
+      <input type="text" class="resp-search-input" placeholder="Поиск в ответе…">
+      <span class="resp-search-count">0/0</span>
+      <button class="resp-search-btn" data-nav="prev" title="Предыдущее (Shift+Enter)">‹</button>
+      <button class="resp-search-btn" data-nav="next" title="Следующее (Enter)">›</button>
+      <button class="resp-search-btn" data-nav="close" title="Закрыть (Esc)">✕</button>`;
+
+    const input = bar.querySelector(".resp-search-input");
+    const count = bar.querySelector(".resp-search-count");
+
+    const update = () => {
+      const total = _runSearch(bodyEl, input.value);
+      count.textContent = `${total ? _searchIdx + 1 : 0}/${total}`;
+      bar.classList.toggle("resp-search-empty", !!input.value && !total);
+    };
+
+    let debounce = null;
+    input.addEventListener("input", () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(update, 150);
+    });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        _gotoHit(_searchIdx + (e.shiftKey ? -1 : 1));
+        count.textContent = `${_searchHits.length ? _searchIdx + 1 : 0}/${_searchHits.length}`;
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        App.closeResponseSearch();
+      }
+    });
+    bar.querySelector('[data-nav="prev"]').addEventListener("click", () => {
+      _gotoHit(_searchIdx - 1);
+      count.textContent = `${_searchHits.length ? _searchIdx + 1 : 0}/${_searchHits.length}`;
+    });
+    bar.querySelector('[data-nav="next"]').addEventListener("click", () => {
+      _gotoHit(_searchIdx + 1);
+      count.textContent = `${_searchHits.length ? _searchIdx + 1 : 0}/${_searchHits.length}`;
+    });
+    bar.querySelector('[data-nav="close"]').addEventListener("click", () => App.closeResponseSearch());
+
+    return bar;
+  }
+
+  App.toggleResponseSearch = function () {
+    const panel = document.querySelector(".response-panel");
+    const bodyEl = document.getElementById("response-body");
+    if (!panel || !bodyEl) return;
+
+    const existing = panel.querySelector(".resp-search");
+    if (existing) {
+      existing.querySelector(".resp-search-input").focus();
+      existing.querySelector(".resp-search-input").select();
+      return;
+    }
+    const bar = _buildSearchBar(bodyEl);
+    panel.insertBefore(bar, bodyEl);
+    bar.querySelector(".resp-search-input").focus();
+  };
+
+  App.closeResponseSearch = function () {
+    const bodyEl = document.getElementById("response-body");
+    if (bodyEl) _clearSearch(bodyEl);
+    document.querySelectorAll(".resp-search").forEach(b => b.remove());
+  };
+
+  App.renderCopyableJson = function (parsed) {
+    const pre = document.createElement("pre");
+    pre.className = "response-pre json-clickable";
+    _jsonDom(pre, parsed, 0, "");
+
+    // Обычное выделение мышкой должно работать как везде: выделил
+    // несколько полей → Ctrl+C (или правая кнопка → Копировать).
+    // Поэтому клик-копирование срабатывает ТОЛЬКО если это был именно
+    // клик, а не протяжка, и в документе нет выделенного текста.
+    let downX = 0, downY = 0;
+    pre.addEventListener("mousedown", (e) => { downX = e.clientX; downY = e.clientY; });
+
+    pre.addEventListener("click", (e) => {
+      if (e.target.closest(".jtoggle")) return;           // это сворачивание
+      const sel = window.getSelection();
+      if (sel && String(sel).trim().length > 0) return;   // идёт выделение — не мешаем
+      if (Math.abs(e.clientX - downX) > 4 || Math.abs(e.clientY - downY) > 4) return; // протяжка
+      const t = e.target.closest(".jv");
+      if (!t) return;
+      App.copyText(t.dataset.copy !== undefined ? t.dataset.copy : t.textContent);
+      _copyFlash(e.clientX, e.clientY, t);
+    });
+
+    // Двойной клик по значению выделяет его целиком — чтобы работал
+    // привычный Ctrl+C. Иначе браузер рвёт JWT по точкам и дефисам.
+    pre.addEventListener("dblclick", (e) => {
+      const t = e.target.closest(".jv");
+      if (!t) return;
+      const range = document.createRange();
+      range.selectNodeContents(t);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+
+    // ПКМ — копировать значение / путь / сохранить в переменную
+    pre.addEventListener("contextmenu", (e) => {
+      const t = e.target.closest(".jv");
+      if (!t) return;
+      e.preventDefault();
+      _openJsonMenu(e.clientX, e.clientY, t);
+    });
+
+    return pre;
+  };
+
   App.renderResponse = function (tab) {
     const statusEl = document.getElementById("response-status");
     const bodyEl = document.getElementById("response-body");
@@ -1021,10 +1432,9 @@ window.App = window.App || {};
     if (tab.responseViewMode === "table" && entities) {
       bodyEl.appendChild(App.renderEntityTable(entities, tab));
     } else if (tab.responseViewMode === "headers") {
-      const pre = document.createElement("pre");
-      pre.className = "response-pre";
-      pre.textContent = JSON.stringify(tab.response.headers, null, 2);
-      bodyEl.appendChild(pre);
+      // Заголовки — тот же кликабельный рендер, что и тело:
+      // клик копирует одно значение, выделение мышкой работает как обычно.
+      bodyEl.appendChild(App.renderCopyableJson(tab.response.headers || {}));
     } else {
       let responseText = tab.response.text || "";
 
@@ -1058,15 +1468,26 @@ window.App = window.App || {};
         return;
       }
 
-      const pre = document.createElement("pre");
-      pre.className = "response-pre";
       if (responseText.length > App.LIMITS.MAX_RESPONSE_DISPLAY) {
+        const pre = document.createElement("pre");
+        pre.className = "response-pre";
         responseText = responseText.substring(0, App.LIMITS.MAX_RESPONSE_DISPLAY);
         pre.textContent = App.formatJson(responseText) + "\n\n... [обрезано: ответ больше " + (App.LIMITS.MAX_RESPONSE_DISPLAY / 1000000).toFixed(0) + " МБ]";
+        bodyEl.appendChild(pre);
       } else {
-        pre.textContent = App.formatJson(responseText);
+        // Валидный JSON рендерим кликабельным: клик по значению копирует его
+        const parsed = responseText.length <= JSON_INTERACTIVE_MAX
+          ? App.tryParseJson(responseText)
+          : null;
+        if (parsed !== null && typeof parsed === "object") {
+          bodyEl.appendChild(App.renderCopyableJson(parsed));
+        } else {
+          const pre = document.createElement("pre");
+          pre.className = "response-pre";
+          pre.textContent = App.formatJson(responseText);
+          bodyEl.appendChild(pre);
+        }
       }
-      bodyEl.appendChild(pre);
     }
   };
 

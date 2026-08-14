@@ -261,6 +261,12 @@ window.App = window.App || {};
   // ============================================================
   // ПРИМЕР ЗНАЧЕНИЯ ПО СХЕМЕ
   // ============================================================
+  /** Поле помечено readOnly — сервер его не принимает (id, created_at, …). */
+  function _isReadOnly(ctx, schema, depth) {
+    const s = _flatten(ctx, schema, depth);
+    return !!(s && s.readOnly === true);
+  }
+
   function _exampleValue(ctx, schema, name, depth) {
     if (depth > MAX_DEPTH) return null;
     const s = _flatten(ctx, schema, depth);
@@ -277,6 +283,10 @@ window.App = window.App || {};
       const obj = {};
       const props = s.properties || {};
       Object.keys(props).forEach(k => {
+        // readOnly-поля сервер отдаёт, но НЕ принимает (id, created_at,
+        // rating_writer и т.п.). Раньше они попадали в тело запроса и
+        // ломали POST/PUT — DRF отвечал 400 или молча их игнорировал.
+        if (_isReadOnly(ctx, props[k], depth + 1)) return;
         obj[k] = _exampleValue(ctx, props[k], k, depth + 1);
       });
       return obj;
@@ -346,6 +356,10 @@ window.App = window.App || {};
         const path = prefix ? `${prefix}.${k}` : k;
         const vs = _flatten(ctx, v, depth + 1) || {};
         const vType = vs.type || (vs.properties ? "object" : "string");
+
+        // Поля только для чтения в запрос не отправляются — пропускаем,
+        // иначе рандомайзер генерит для них значения впустую.
+        if (vs.readOnly === true) return;
 
         if (vType === "object") {
           _collectFields(ctx, v, path, out, depth + 1);

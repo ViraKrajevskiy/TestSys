@@ -210,8 +210,14 @@
       dot.style.background = "var(" + colorVar + ")";
 
       const title = node.querySelector(".tab-title");
-      title.textContent = App.tabTitle(tab);
-      title.title = tab.url || App.tabTitle(tab);
+      // Точка у названия — во вкладке есть правки, не сохранённые
+      // в коллекцию (Ctrl+S). Без неё легко закрыть вкладку и потерять их.
+      const dirty = App.tabIsDirty && App.tabIsDirty(tab);
+      title.textContent = (dirty ? "• " : "") + App.tabTitle(tab);
+      title.classList.toggle("tab-dirty", !!dirty);
+      title.title = dirty
+        ? `${tab.url || App.tabTitle(tab)}\n(есть несохранённые правки — Ctrl+S)`
+        : (tab.url || App.tabTitle(tab));
 
       // Двойной клик по заголовку — переименовать.
       title.addEventListener("dblclick", (e) => {

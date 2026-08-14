@@ -52,6 +52,28 @@ window.App = window.App || {};
       </div>
     </div>
 
+    <!-- PICK LIST: выбрать папку + задать имя (Ctrl+S для свободной вкладки) -->
+    <div class="modal fade" id="app-pick-modal" tabindex="-1">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content theme-modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="app-pick-title"></h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <label class="form-label" style="font-size:12px;" id="app-pick-label"></label>
+            <select class="form-select form-select-sm mb-3" id="app-pick-select"></select>
+            <label class="form-label" style="font-size:12px;" id="app-pick-name-label"></label>
+            <input type="text" class="form-control form-control-sm" id="app-pick-name">
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal" data-i18n="cancel">Отмена</button>
+            <button type="button" class="btn send-btn btn-sm" id="app-pick-ok" data-i18n="save">Сохранить</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- REQUEST EDITOR -->
     <div class="modal fade" id="app-request-modal" tabindex="-1">
       <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -115,6 +137,17 @@ window.App = window.App || {};
       _finish(true);
     });
     cModal.addEventListener("hidden.bs.modal", () => _finish(false));
+
+    // --- PICK LIST wiring ---
+    const kModal = document.getElementById("app-pick-modal");
+    document.getElementById("app-pick-ok").addEventListener("click", () => {
+      const index = parseInt(document.getElementById("app-pick-select").value, 10);
+      const name = document.getElementById("app-pick-name").value.trim();
+      if (!name) return;
+      bootstrap.Modal.getInstance(kModal).hide();
+      _finish({ index, name });
+    });
+    kModal.addEventListener("hidden.bs.modal", () => _finish(null));
 
     // --- REQUEST EDITOR wiring ---
     const rModal = document.getElementById("app-request-modal");
@@ -182,6 +215,29 @@ window.App = window.App || {};
       ok.textContent = opts.okText || App.t("ok");
       ok.className = "btn btn-sm " + (opts.danger ? "btn-danger" : "send-btn");
       bootstrap.Modal.getOrCreateInstance(document.getElementById("app-confirm-modal")).show();
+    });
+  };
+
+  /**
+   * Выбор из списка + имя. Используется Ctrl+S, когда вкладка не
+   * привязана к коллекции: надо спросить, в какую папку её положить.
+   * Возвращает {index, name} либо null.
+   */
+  App.showPickList = function (opts) {
+    _ensure();
+    opts = opts || {};
+    return new Promise((resolve) => {
+      _resolve = resolve;
+      document.getElementById("app-pick-title").textContent = opts.title || "";
+      document.getElementById("app-pick-label").textContent = opts.label || "";
+      document.getElementById("app-pick-name-label").textContent = opts.nameLabel || "";
+      const sel = document.getElementById("app-pick-select");
+      sel.innerHTML = (opts.options || [])
+        .map((o, i) => `<option value="${i}">${App.escapeHtml(o)}</option>`).join("");
+      const nameInp = document.getElementById("app-pick-name");
+      nameInp.value = opts.nameValue || "";
+      bootstrap.Modal.getOrCreateInstance(document.getElementById("app-pick-modal")).show();
+      setTimeout(() => { nameInp.focus(); nameInp.select(); }, 250);
     });
   };
 

@@ -104,6 +104,17 @@ body {
   border-color: var(--accent);
 }
 .nav-bar-btn:active { filter: brightness(.9); }
+
+/* Рандомайзер и генератор данных — самые частые инструменты, поэтому
+   вынесены из «⋯» в навбар и подсвечены, чтобы их было видно сразу. */
+.nav-bar-btn.nav-btn-accent {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.nav-bar-btn.nav-btn-accent:hover {
+  background: var(--accent-hover, var(--accent-soft));
+  border-color: var(--accent);
+}
 .nav-bar-btn.active {
   background: var(--accent-soft);
   color: var(--accent);
@@ -3250,6 +3261,51 @@ body.sb-dragging #sidebar, body.sb-resizing #sidebar {
   padding: 0;
 }
 
+/* ── Наследование авторизации от папки / коллекции ───────────────────────── */
+.auth-inherit-box {
+  padding: 10px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-sm, 4px);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.auth-inherit-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  color: var(--text-main);
+}
+.auth-inherit-head i { color: var(--accent); font-size: 13px; }
+.auth-inherit-head b { color: var(--accent); font-weight: 600; }
+.auth-inherit-desc {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+.auth-inherit-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.auth-inherit-actions .btn { font-size: 11.5px; padding: 3px 10px; }
+
+/* Пояснение области действия в диалоге авторизации коллекции/папки */
+.auth-scope-note {
+  margin-top: 14px;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border-radius: var(--radius-sm, 4px);
+}
+.auth-scope-note b { color: var(--text-main); font-weight: 600; }
+
 /* ── Navbar separator ────────────────────────────────────────────────────── */
 .navbar-sep {
   width: 1px;
@@ -3324,4 +3380,184 @@ body.sb-dragging #sidebar, body.sb-resizing #sidebar {
 }
 #app-root.sidebar-collapsed #sidebar-toggle-btn .bi::before {
   content: "\f290"; /* bi-layout-sidebar-reverse — сайдбар закрыт */
+}
+
+/* ── Кликабельный JSON в ответе: клик по значению копирует его ── */
+/* Выделение мышкой должно работать во всей панели ответа —
+   иначе нельзя скопировать сразу 2-3 поля привычным способом. */
+#response-body,
+#response-body *,
+.response-pre,
+.response-panel {
+  user-select: text;
+  -webkit-user-select: text;
+  -ms-user-select: text;
+}
+
+.json-clickable .jv {
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background .12s ease;
+}
+/* Пока пользователь тянет выделение — не подсвечиваем поля под курсором,
+   чтобы hover не мешал видеть, что именно выделено. */
+.json-clickable:active .jv:hover { background: transparent; box-shadow: none; }
+.json-clickable .jv:hover {
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.json-clickable .jv-str  { color: #22a06b; }
+.json-clickable .jv-num  { color: #2f81f7; }
+.json-clickable .jv-bool { color: #d97706; }
+.json-clickable .jv-null { color: var(--text-dim); }
+.json-clickable .jk      { color: var(--accent); }
+
+.jv-copied {
+  background: var(--accent) !important;
+  color: var(--accent-text) !important;
+}
+
+.copy-flash {
+  position: fixed;
+  z-index: 9999;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  pointer-events: none;
+  white-space: nowrap;
+  animation: copyFlash .9s ease forwards;
+}
+@keyframes copyFlash {
+  0%   { opacity: 0; transform: translateY(5px); }
+  15%  { opacity: 1; transform: translateY(0); }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-8px); }
+}
+
+/* Вкладка с правками, не сохранёнными в коллекцию (Ctrl+S) */
+.tab-title.tab-dirty { color: var(--accent); font-style: italic; }
+
+/* ── Сворачивание узлов JSON ──────────────────────────────────────────────── */
+.json-clickable .jtoggle {
+  display: inline-block;
+  width: 13px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+  font-size: 9px;
+  text-align: center;
+  opacity: .65;
+  vertical-align: 1px;
+}
+.json-clickable .jtoggle:hover { color: var(--accent); }
+.json-clickable .jsummary {
+  color: var(--text-dim);
+  font-style: italic;
+  cursor: pointer;
+  opacity: .8;
+}
+
+/* ── Поиск по ответу ──────────────────────────────────────────────────────── */
+.resp-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-color);
+}
+.resp-search > i { color: var(--text-dim); font-size: 12px; }
+.resp-search-input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 4px);
+  color: var(--text-main);
+  font-size: 12px;
+  padding: 3px 8px;
+  outline: none;
+}
+.resp-search-input:focus { border-color: var(--accent); }
+.resp-search-empty .resp-search-input { border-color: var(--status-5xx, #dc3545); }
+.resp-search-count {
+  font-size: 11px;
+  color: var(--text-dim);
+  min-width: 42px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.resp-search-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-dim);
+  border-radius: var(--radius-sm, 4px);
+  width: 22px;
+  height: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.resp-search-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+mark.jhit {
+  background: rgba(250, 204, 21, .35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0;
+}
+mark.jhit.jhit-active {
+  background: #facc15;
+  color: #111;
+}
+
+/* Контекстное меню значения в ответе */
+.json-ctx-menu { max-width: 320px; }
+.json-ctx-menu .sb-pos-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Авто-обновление токена при 401 (диалог авторизации коллекции) ───────── */
+.auth-refresh-box {
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 4px);
+}
+.auth-refresh-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-main);
+  cursor: pointer;
+  user-select: none;
+  margin: 0;
+}
+.auth-refresh-desc {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.45;
+  margin: 5px 0 0 24px;
+}
+.auth-refresh-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+}
+.auth-refresh-row {
+  display: flex;
+  gap: 10px;
+}
+.auth-refresh-row .auth-field-group { flex: 1; min-width: 0; }
+.auth-refresh-fields textarea {
+  font-family: var(--font-mono, monospace);
+  resize: vertical;
 }

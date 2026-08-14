@@ -212,7 +212,11 @@ App.saveCollections = async function () {
       // только в памяти и терялись при перезапуске.
       const payload = {
         version: 2,
-        collections: App.USER_COLLECTIONS.map(c => ({ name: c.name, folders: c.folders })),
+        // auth — авторизация уровня коллекции (её наследуют запросы внутри).
+        // Без явного поля она терялась бы при перезапуске.
+        collections: App.USER_COLLECTIONS.map(c => ({
+          name: c.name, auth: c.auth, tokenRefresh: c.tokenRefresh, folders: c.folders,
+        })),
         variables: App.VARIABLES,
       };
       await window.pywebview.api.save_collections(JSON.stringify(payload));

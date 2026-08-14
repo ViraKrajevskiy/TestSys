@@ -71,6 +71,19 @@ window.App = window.App || {};
       action: () => App.showCurlImport && App.showCurlImport() },
     { key: "ui.websocket", group: "ui", i18n: "hkWebsocket", default: "Ctrl+Shift+W", whenInput: false,
       action: () => App.showWebSocket && App.showWebSocket() },
+
+    { key: "request.save", group: "request", i18n: "hkSaveRequest", default: "Ctrl+S", whenInput: true,
+      action: () => App.saveTabToCollection && App.saveTabToCollection() },
+    { key: "request.search", group: "request", i18n: "hkSearchResponse", default: "Ctrl+F", whenInput: true,
+      action: () => App.toggleResponseSearch && App.toggleResponseSearch() },
+
+    // --- ГЕНЕРАЦИЯ ДАННЫХ ---
+    // whenInput: true — рандомайзер нужен чаще всего ровно тогда, когда
+    // курсор стоит в поле body и надо подставить значение.
+    { key: "gen.randomizer", group: "gen", i18n: "hkRandomizer", default: "Ctrl+R", whenInput: true,
+      action: () => window.UnifiedRandomizer && UnifiedRandomizer.toggle() },
+    { key: "gen.generator", group: "gen", i18n: "hkGenerator", default: "Ctrl+G", whenInput: true,
+      action: () => window.Generator && Generator.showModal() },
   ];
 
   // Активные сочетания: { "ctrl+t": {key,action,whenInput}, ... }

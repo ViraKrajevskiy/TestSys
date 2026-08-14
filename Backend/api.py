@@ -883,6 +883,39 @@ class Api:
                 return None
         return None
 
+    # ========== СЕССИЯ ВКЛАДОК ==========
+    # Открытые вкладки переживают перезапуск приложения — как в Postman
+    # и Insomnia. Пишем отдельным файлом: поломка сессии не должна
+    # утащить за собой коллекции.
+    def save_tabs(self, tabs_json):
+        """Сохраняет открытые вкладки в tabs.json (атомарная запись)."""
+        path = os.path.join(USER_DATA_DIR, "tabs.json")
+        try:
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                f.write(tabs_json)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save tabs: {e}")
+            return False
+
+    def load_tabs(self):
+        """Читает tabs.json. Битый файл — не повод падать при старте."""
+        path = os.path.join(USER_DATA_DIR, "tabs.json")
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = f.read()
+            json.loads(data)   # убеждаемся, что это валидный JSON
+            return data
+        except Exception as e:
+            logger.warning(f"tabs.json повреждён, сессия не восстановлена: {e}")
+            return None
+
     # ========== RANDOMIZER WINDOW ==========
     RANDOMIZER_WINDOW_TITLE = "TestSys — Randomizer"
 

@@ -90,9 +90,20 @@ App.init = function () {
   // Он же обрабатывает Ctrl+T / Ctrl+W / Ctrl+Tab / Ctrl+` и всё остальное.
   App.initHotkeys && App.initHotkeys();
 
-  if (App.state.tabs.length === 0) {
-    App.addTab();
-  }
+  // Восстанавливаем вкладки прошлой сессии. Если сессии нет или она
+  // не читается — открываем одну пустую вкладку, как раньше.
+  App.loadSession().then((restored) => {
+    if (!restored && App.state.tabs.length === 0) App.addTab();
+  });
+
+  // Страховка: при закрытии окна дожимаем несохранённое состояние сессии
+  window.addEventListener("beforeunload", () => {
+    try {
+      if (window.pywebview?.api?.save_tabs && App.state.tabs.length) {
+        App.flushSession && App.flushSession();
+      }
+    } catch (e) { /* закрытие — не место для ошибок */ }
+  });
 
   // Спрашиваем у Python тип окна. Пока ответа нет, окно ведёт себя как
   // главное; узнав, что это рандомайзер — перестраивается.
