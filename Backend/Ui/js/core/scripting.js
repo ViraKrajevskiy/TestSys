@@ -233,6 +233,17 @@ window.App = window.App || {};
     const varsApi = {
       get: (name) => App.VARIABLES[name],
       set: (name, value) => {
+        // String(undefined) даёт литерал "undefined", который потом уезжает
+        // в заголовки как настоящее значение — запросы падают, а причину
+        // видно только если открыть переменные и присмотреться.
+        // Такой записи не место в переменных: предупреждаем и не пишем.
+        if (value === undefined || value === null) {
+          _log("warn", source, [
+            `pm.variables.set("${name}", ${value}) — значение пустое, переменная не изменена. ` +
+            `Обычно это значит, что в ответе нет такого поля.`,
+          ]);
+          return;
+        }
         App.VARIABLES[name] = String(value);
         if (App.saveCollections) App.saveCollections();
       },

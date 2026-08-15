@@ -159,13 +159,36 @@ App.sendRequest = async function (tabId, opts) {
   // Токен живёт недолго, и раньше приходилось вручную идти на login.
   // Если у коллекции настроен refresh — дёргаем его и повторяем запрос.
   // _authRetried не даёт зациклиться, если refresh тоже отдаёт 401.
-  if (!_authRetried && tab.response && tab.response.ok && tab.response.status_code === 401
+  // Флаг держим НА ВКЛАДКЕ, а не только в аргументах: любой перехватчик
+  // App.sendRequest (например, консоль скриптов) может не пробросить второй
+  // аргумент — и защита от цикла молча исчезнет. Проверено на практике.
+  // Любой успешный ответ означает, что авторизация снова работает —
+  // снимаем предохранитель, накопленный прошлыми неудачами.
+  if (tab.response && tab.response.ok && tab.response.status_code < 400
+      && App.resetTokenRefreshState) {
+    App.resetTokenRefreshState();
+  }
+
+  const alreadyRetrying = _authRetried || tab._authRetrying === true;
+
+  if (!alreadyRetrying && tab.response && tab.response.ok && tab.response.status_code === 401
       && App.tryRefreshToken) {
-    const refreshed = await App.tryRefreshToken(tab);
-    if (refreshed) {
-      tab.sending = false;
-      App.logWarn && App.logWarn("Auth", "Получен 401 — токен обновлён, повторяю запрос");
-      return App.sendRequest(tabId, { _authRetried: true });
+    tab._authRetrying = true;
+    try {
+      const refreshed = await App.tryRefreshToken(tab);
+      if (refreshed) {
+        tab.sending = false;
+        App.logWarn && App.logWarn("Auth", "Получен 401 — токен обновлён, повторяю запрос");
+        const result = await App.sendRequest(tabId, { _authRetried: true });
+        // Повтор со свежим токеном снова 401 — обновление не помогает.
+        // Отмечаем, чтобы предохранитель отключил авто-refresh.
+        if (tab.response && tab.response.status_code === 401 && App.markRefreshIneffective) {
+          App.markRefreshIneffective();
+        }
+        return result;
+      }
+    } finally {
+      tab._authRetrying = false;
     }
   }
 

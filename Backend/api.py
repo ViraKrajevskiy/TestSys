@@ -891,12 +891,20 @@ class Api:
         """Сохраняет открытые вкладки в tabs.json (атомарная запись)."""
         path = os.path.join(USER_DATA_DIR, "tabs.json")
         try:
-            tmp = path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                f.write(tabs_json)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp, path)
+            # Уникальный tmp — сессия пишется часто, гонки реальны (см. WinError 32)
+            tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
+            try:
+                with open(tmp, "w", encoding="utf-8") as f:
+                    f.write(tabs_json)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp, path)
+            finally:
+                if os.path.exists(tmp):
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
             return True
         except Exception as e:
             logger.error(f"Failed to save tabs: {e}")
@@ -1990,13 +1998,25 @@ class Api:
                 except Exception as e:
                     logger.warning(f"Collections backup failed: {e}")
 
-            # Атомарная запись
-            tmp = path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                f.write(collections_json)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp, path)
+            # Атомарная запись. Имя временного файла уникально для каждого
+            # вызова: раньше все сохранения писали в один collections.json.tmp,
+            # и при двух почти одновременных сохранениях (а они бывают —
+            # pm.variables.set вызывает save на каждую переменную) os.replace
+            # падал на Windows с WinError 32 «файл занят другим процессом».
+            tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
+            try:
+                with open(tmp, "w", encoding="utf-8") as f:
+                    f.write(collections_json)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp, path)
+            finally:
+                # Если replace не удался — не оставляем мусор рядом с данными
+                if os.path.exists(tmp):
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
 
             logger.info("Collections saved")
             return True

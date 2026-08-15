@@ -21,7 +21,14 @@ __pycache__/
 settings.json
 theme.json
 collections.json
+collections.json.*
+tabs.json
+_to_delete/
+rand_templates.json
 shared_collections.json
+shared_users.json
+shared_acl.json
+backend.log
 metrics.json
 testsys.log
 testsys.log.*

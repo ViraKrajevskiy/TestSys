@@ -1377,6 +1377,27 @@ window.App = window.App || {};
     return pre;
   };
 
+  /** Какой заголовок/параметр авторизации реально ушёл в последнем запросе. */
+  function _authHeaderSent(tab) {
+    const sentH = (tab.lastSent && tab.lastSent.headers) || {};
+    const sentP = (tab.lastSent && tab.lastSent.params) || {};
+    const short = (v) => {
+      v = String(v || "");
+      return v.length > 28 ? v.slice(0, 18) + "…" : v;
+    };
+    const authKey = Object.keys(sentH).find(k => k.toLowerCase() === "authorization");
+    if (authKey) return `${authKey}: ${short(sentH[authKey])}`;
+
+    // API Key мог уйти произвольным заголовком или query-параметром
+    const eff = App.resolveEffectiveAuth && App.resolveEffectiveAuth(tab);
+    const ak = eff && eff.auth && eff.auth.type === "apikey" && eff.auth.apikey;
+    if (ak && ak.key) {
+      if (sentH[ak.key] !== undefined) return `${ak.key}: ${short(sentH[ak.key])}`;
+      if (sentP[ak.key] !== undefined) return `?${ak.key}=${short(sentP[ak.key])}`;
+    }
+    return null;
+  }
+
   App.renderResponse = function (tab) {
     const statusEl = document.getElementById("response-status");
     const bodyEl = document.getElementById("response-body");
@@ -1429,6 +1450,37 @@ window.App = window.App || {};
     });
 
     bodyEl.innerHTML = "";
+
+    // 401/403 чаще всего означают не «неверный токен», а «токен вообще не
+    // ушёл»: в поле стоит {{token}}, а переменная пустая. По ответу сервера
+    // это неотличимо, поэтому объясняем прямо здесь.
+    if ((code === 401 || code === 403) && App.authDiagnose) {
+      const problem = App.authDiagnose(tab);
+      const box = document.createElement("div");
+      box.className = "auth-warn-box";
+
+      if (problem) {
+        box.innerHTML = `
+          <div class="auth-warn-title"><i class="bi bi-shield-exclamation"></i> ${App.escapeHtml(problem.title)}</div>
+          <div class="auth-warn-hint">${App.escapeHtml(problem.hint)}</div>`;
+        bodyEl.appendChild(box);
+      } else {
+        // Заголовок авторизации ушёл, но сервер его не принял. Показываем,
+        // ЧТО именно было отправлено: чаще всего оказывается, что выбран
+        // не тот тип (например API Key вместо Bearer) и уходит заголовок,
+        // о котором сервер ничего не знает.
+        const sent = _authHeaderSent(tab);
+        if (sent) {
+          box.innerHTML = `
+            <div class="auth-warn-title"><i class="bi bi-shield-exclamation"></i> Сервер не принял отправленную авторизацию</div>
+            <div class="auth-warn-hint">Ушёл заголовок <code>${App.escapeHtml(sent)}</code>.
+              Если сервер ждёт другой — поменяйте тип во вкладке Auth
+              (для JWT это <code>Authorization: Bearer &lt;token&gt;</code>).</div>`;
+          bodyEl.appendChild(box);
+        }
+      }
+    }
+
     if (tab.responseViewMode === "table" && entities) {
       bodyEl.appendChild(App.renderEntityTable(entities, tab));
     } else if (tab.responseViewMode === "headers") {

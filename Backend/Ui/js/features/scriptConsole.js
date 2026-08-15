@@ -126,12 +126,16 @@ window.App = window.App || {};
   function _hookRequests() {
     if (!App.sendRequest || App.sendRequest._consoleHooked) return;
     const orig = App.sendRequest;
-    App.sendRequest = async function (tabId) {
+    // ВАЖНО: пробрасываем ВСЕ аргументы (...args), а не только tabId.
+    // Раньше обёртка глотала второй аргумент, и флаг _authRetried не доходил
+    // до sendRequest — авто-обновление токена уходило в бесконечный цикл:
+    // 401 → refresh → повтор → снова «первая попытка» → 401 → …
+    App.sendRequest = async function (tabId, ...args) {
       const tab = App.state.tabs.find(t => t.id === tabId);
       if (tab) App.scriptConsole.write("request", "app", [`${tab.method} ${tab.url}`]);
 
       const started = Date.now();
-      const result = await orig.call(App, tabId);
+      const result = await orig.call(App, tabId, ...args);
 
       if (tab && tab.response) {
         const r = tab.response;
