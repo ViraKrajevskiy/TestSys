@@ -57,6 +57,16 @@ App.init = function () {
   App.initTabBarDrag();
   App.initResizable();          // ресайз панелей
 
+  // При изменении размера окна убираем всплывающие меню и поповеры: они
+  // позиционируются абсолютными координатами и после ресайза повисают
+  // в стороне и обрезаются у края. Проще закрыть, чем пересчитывать.
+  window.addEventListener("resize", () => {
+    document
+      .querySelectorAll("#sb-more-menu, .sb-pos-menu, .url-ac-box, .sb-submenu")
+      .forEach((el) => el.remove());
+    App.hideTabContextMenu && App.hideTabContextMenu();
+  });
+
   // Переводы применяем ПОСЛЕ вставки всех модалок — иначе их data-i18n
   // не обработается (модалки добавляются в DOM в init*-функциях выше).
   App.applyTranslations();
@@ -90,12 +100,6 @@ App.init = function () {
   // Он же обрабатывает Ctrl+T / Ctrl+W / Ctrl+Tab / Ctrl+` и всё остальное.
   App.initHotkeys && App.initHotkeys();
 
-  // Восстанавливаем вкладки прошлой сессии. Если сессии нет или она
-  // не читается — открываем одну пустую вкладку, как раньше.
-  App.loadSession().then((restored) => {
-    if (!restored && App.state.tabs.length === 0) App.addTab();
-  });
-
   // Страховка: при закрытии окна дожимаем несохранённое состояние сессии
   window.addEventListener("beforeunload", () => {
     try {
@@ -105,11 +109,22 @@ App.init = function () {
     } catch (e) { /* закрытие — не место для ошибок */ }
   });
 
-  // Спрашиваем у Python тип окна. Пока ответа нет, окно ведёт себя как
-  // главное; узнав, что это рандомайзер — перестраивается.
+  // Спрашиваем у Python тип окна, затем грузим сессию ТОЛЬКО для главного.
+  // Раньше loadSession вызывался безусловно — в detached/randomizer/console
+  // он читал tabs.json и перетирал нужное состояние окна (detached-вкладка
+  // заменялась двумя сохранёнными вкладками, и при закрытии возвращалась
+  // неправильная вкладка).
   App.detectWindowKind().then((kind) => {
     if (kind === "main") {
       App.initSync();   // синхронизацией/хостом управляет только главное окно
+      // Восстанавливаем вкладки прошлой сессии. Если сессии нет — пустая.
+      App.loadSession().then((restored) => {
+        if (!restored && App.state.tabs.length === 0) App.addTab();
+      });
+    } else {
+      // Дочерние окна сессией не владеют. Помечаем загруженной, чтобы
+      // saveSession не заблокировался ложным «ещё не готов».
+      App.markSessionLoaded && App.markSessionLoaded();
     }
   });
 };

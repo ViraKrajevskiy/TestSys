@@ -58,7 +58,16 @@ App.sendRequest = async function (tabId, opts) {
     }
   }
 
-  const finalUrl = resolve(tab.url).trim();
+  // Схлопываем случайные двойные слэши: {{baseUrl}} с завершающим "/" плюс
+  // путь, начинающийся с "/", давали "host//api/..." — сервер отвечал 404.
+  // "://" в схеме и слэши внутри query-строки не трогаем.
+  const _dedupeSlashes = (u) => {
+    const q = u.indexOf("?");
+    const head = q === -1 ? u : u.slice(0, q);
+    const tail = q === -1 ? "" : u.slice(q);
+    return head.replace(/([^:])\/{2,}/g, "$1/") + tail;
+  };
+  const finalUrl = _dedupeSlashes(resolve(tab.url).trim());
   const finalBody = tab.body ? resolve(tab.body) : "";
 
   // Проверяем схему ДО отправки. Иначе requests отдаёт невнятное
@@ -138,13 +147,18 @@ App.sendRequest = async function (tabId, opts) {
     // Без файлов зовём старую сигнатуру (5 аргументов) — совместимо со
     // сборками бэка без multipart. Extra args добавляем только если реально
     // отправляем файлы.
+    // SSL-проверка и прокси — из настроек. verify_ssl по умолчанию true.
+    const verifySsl = App.getSetting ? App.getSetting("verifySsl") !== false : true;
+    const proxy = (App.getSetting && App.getSetting("proxyUrl")) || null;
+
     tab.response = hasFiles
       ? await window.pywebview.api.send_request(
           tab.method, finalUrl, headersObj, paramsObj, null,
-          filesArr, formFieldsArr,
+          filesArr, formFieldsArr, verifySsl, proxy,
         )
       : await window.pywebview.api.send_request(
           tab.method, finalUrl, headersObj, paramsObj, finalBody.trim() || null,
+          null, null, verifySsl, proxy,
         );
     if (tab.response.ok && App.getResponseEntities(tab) && tab.crudEntity) {
       tab.responseViewMode = "table";

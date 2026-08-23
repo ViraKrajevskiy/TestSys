@@ -98,6 +98,7 @@ window.App = window.App || {};
 
     const urlInput = document.getElementById("url-input");
     urlInput.maxLength = App.LIMITS.MAX_URL_LENGTH;
+    App.attachUrlAutocomplete && App.attachUrlAutocomplete(urlInput);
     urlInput.addEventListener("input", (e) => { tab.url = e.target.value; App.saveSession && App.saveSession(); });
     urlInput.addEventListener("change", () => App.renderTabBar());
     urlInput.addEventListener("keydown", (e) => {
@@ -282,6 +283,14 @@ window.App = window.App || {};
     const listKey = tab.activeSubTab;
     const rows = tab[listKey];
     const limit = listKey === "params" ? App.LIMITS.MAX_PARAMS : App.LIMITS.MAX_HEADERS;
+    const bulkFlag = "_bulk_" + listKey;
+
+    // Режим массового ввода: вся таблица одним текстом «Key: Value».
+    // Удобно вставить пачку заголовков из curl/девтулзов, не набирая построчно.
+    if (tab[bulkFlag]) {
+      _renderBulkKV(container, tab, listKey, limit);
+      return;
+    }
 
     // В конце всегда одна пустая строка: начал печатать,
     // снизу тут же появилась следующая. Кнопка "Add" больше не нужна.
@@ -290,6 +299,11 @@ window.App = window.App || {};
     }
 
     container.innerHTML = `
+      <div class="kv-toolbar">
+        <button class="btn btn-sm btn-outline-secondary kv-bulk-btn" id="kv-bulk-toggle">
+          <i class="bi bi-pencil-square"></i> ${App.t("bulkEdit") || "Массовый ввод"}
+        </button>
+      </div>
       <div class="kv-table">
         <div class="kv-head">
           <span class="kv-col-check"></span>
@@ -300,6 +314,11 @@ window.App = window.App || {};
         <div id="kv-rows"></div>
       </div>
       <div class="kv-hint">${App.t("kvHint")}</div>`;
+
+    container.querySelector("#kv-bulk-toggle").addEventListener("click", () => {
+      tab[bulkFlag] = true;
+      App.renderTabContent();
+    });
 
     const rowsContainer = container.querySelector("#kv-rows");
     const template = document.getElementById("kv-row-template");
@@ -1331,6 +1350,77 @@ window.App = window.App || {};
     document.querySelectorAll(".resp-search").forEach(b => b.remove());
   };
 
+  function _humanSize(n) {
+    if (n < 1024) return n + " Б";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " КБ";
+    return (n / (1024 * 1024)).toFixed(1) + " МБ";
+  }
+
+  function _suggestedName(tab) {
+    let name = "";
+    try {
+      const u = new URL(tab.lastSent ? tab.lastSent.url : tab.url);
+      name = u.pathname.split("/").filter(Boolean).pop() || "";
+    } catch { /* пусто */ }
+    if (name && /\.[a-z0-9]{2,5}$/i.test(name)) return name;
+    const ct = (tab.response.content_type || "").split(";")[0].trim();
+    const ext = ({
+      "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif",
+      "image/webp": "webp", "image/svg+xml": "svg",
+      "application/pdf": "pdf", "application/zip": "zip",
+      "application/octet-stream": "bin",
+    })[ct] || "bin";
+    return (name || "response") + "." + ext;
+  }
+
+  /** Рендер бинарного ответа: превью картинки + кнопка «Скачать». */
+  function _renderBinaryResponse(tab) {
+    const r = tab.response;
+    const box = document.createElement("div");
+    box.className = "binary-response";
+
+    const ct = (r.content_type || "неизвестный тип").split(";")[0].trim();
+    const size = (r.timing && r.timing.size) || 0;
+
+    if (r.is_image && r.base64) {
+      const img = document.createElement("img");
+      img.className = "binary-preview";
+      img.src = `data:${ct};base64,${r.base64}`;
+      img.alt = "Ответ-изображение";
+      box.appendChild(img);
+    } else {
+      const icon = document.createElement("div");
+      icon.className = "binary-icon";
+      icon.innerHTML = '<i class="bi bi-file-earmark-binary"></i>';
+      box.appendChild(icon);
+    }
+
+    const info = document.createElement("div");
+    info.className = "binary-info";
+    info.textContent = `${ct} · ${_humanSize(size)}`;
+    box.appendChild(info);
+
+    const btn = document.createElement("button");
+    btn.className = "btn send-btn btn-sm";
+    btn.innerHTML = '<i class="bi bi-download"></i> Скачать ответ';
+    btn.addEventListener("click", async () => {
+      if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.save_binary_response) {
+        App.showAlert && App.showAlert("Сохранение недоступно");
+        return;
+      }
+      btn.disabled = true;
+      try {
+        const res = await window.pywebview.api.save_binary_response(r.base64, _suggestedName(tab));
+        if (res && res.ok) App.showAlert && App.showAlert("✓ Сохранено: " + res.path);
+        else if (res && !res.cancelled) App.showAlert && App.showAlert("Ошибка: " + (res.error || ""));
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    box.appendChild(btn);
+    return box;
+  }
+
   App.renderCopyableJson = function (parsed) {
     const pre = document.createElement("pre");
     pre.className = "response-pre json-clickable";
@@ -1396,6 +1486,70 @@ window.App = window.App || {};
       if (sentP[ak.key] !== undefined) return `?${ak.key}=${short(sentP[ak.key])}`;
     }
     return null;
+  }
+
+  // ── Массовый ввод key-value (params / headers) ───────────────────────────
+
+  /** rows → текст. Отключённые строки помечаем «# » в начале, как в Insomnia. */
+  function _kvToText(rows) {
+    return (rows || [])
+      .filter(r => (r.key || "").trim() || (r.value || "").trim())
+      .map(r => (r.enabled === false ? "# " : "") + (r.key || "") + ": " + (r.value || ""))
+      .join("\n");
+  }
+
+  /** Текст → rows. Строка «Key: Value», ведущий «#» или «//» — выключенная. */
+  function _textToKV(text) {
+    const out = [];
+    String(text || "").split("\n").forEach(line => {
+      const raw = line.trim();
+      if (!raw) return;
+      let enabled = true;
+      let body = line;
+      const m = raw.match(/^(#|\/\/)\s?(.*)$/);
+      if (m) { enabled = false; body = m[2]; }
+      const idx = body.indexOf(":");
+      if (idx === -1) {
+        // Строка без двоеточия — трактуем как ключ без значения
+        out.push({ key: body.trim(), value: "", enabled });
+      } else {
+        out.push({
+          key: body.slice(0, idx).trim(),
+          value: body.slice(idx + 1).trim(),
+          enabled,
+        });
+      }
+    });
+    return out;
+  }
+
+  function _renderBulkKV(container, tab, listKey, limit) {
+    const bulkFlag = "_bulk_" + listKey;
+    container.innerHTML = `
+      <div class="kv-toolbar">
+        <button class="btn btn-sm btn-outline-secondary kv-bulk-btn" id="kv-bulk-done">
+          <i class="bi bi-table"></i> ${App.t("bulkDone") || "Обычный вид"}
+        </button>
+        <span class="kv-bulk-hint">${App.t("bulkHint") || "Формат: Key: Value — по строке на пару. «#» в начале — выключить строку."}</span>
+      </div>
+      <textarea class="form-control body-textarea kv-bulk-area" id="kv-bulk-area" rows="12"
+                placeholder="Content-Type: application/json&#10;Authorization: Bearer {{token}}">${App.escapeHtml(_kvToText(tab[listKey]))}</textarea>`;
+
+    const area = container.querySelector("#kv-bulk-area");
+
+    const commit = () => {
+      let parsed = _textToKV(area.value);
+      if (parsed.length > limit) parsed = parsed.slice(0, limit);
+      tab[listKey] = parsed;
+      App.saveSession && App.saveSession();
+    };
+
+    area.addEventListener("input", commit);
+    container.querySelector("#kv-bulk-done").addEventListener("click", () => {
+      commit();
+      tab[bulkFlag] = false;
+      App.renderTabContent();
+    });
   }
 
   App.renderResponse = function (tab) {
@@ -1487,6 +1641,8 @@ window.App = window.App || {};
       // Заголовки — тот же кликабельный рендер, что и тело:
       // клик копирует одно значение, выделение мышкой работает как обычно.
       bodyEl.appendChild(App.renderCopyableJson(tab.response.headers || {}));
+    } else if (tab.response.is_binary) {
+      bodyEl.appendChild(_renderBinaryResponse(tab));
     } else {
       let responseText = tab.response.text || "";
 

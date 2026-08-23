@@ -365,6 +365,10 @@ class Api:
     def __init__(self, window_kind="main"):
         self.child_windows = []
         self._detached_tab_state_json = None
+        # Пока фронтенд не загрузил коллекции в этой сессии, пустой список
+        # на сохранение — почти наверняка гонка на старте, а не «удалить всё».
+        # Флаг снимаем в load_collections. См. save_collections.
+        self._collections_loaded = False
         # Тип окна: main | randomizer | detached.
         # Раньше он передавался через #hash в URL, но pywebview отдаёт
         # страницу через свой http-сервер и хеш до JS не доезжал —
@@ -648,14 +652,59 @@ class Api:
             return {"ok": False, "error": str(e)}
 
     def send_request(self, method, url, headers, params, body,
-                     files=None, form_fields=None):
+                     files=None, form_fields=None, verify_ssl=True, proxy=None):
         """Отправка HTTP-запроса. Вызывается из app.js.
 
         ``files`` — список ``{field, path, filename?}``. Если непустой,
         запрос уходит как multipart/form-data вместе с ``form_fields``.
+        ``verify_ssl`` / ``proxy`` приходят из настроек приложения.
         """
         return send_http_request(method, url, headers, params, body,
-                                 files=files, form_fields=form_fields)
+                                 files=files, form_fields=form_fields,
+                                 verify_ssl=verify_ssl, proxy=proxy)
+
+    def save_binary_response(self, b64_content, suggested_name="response.bin"):
+        """Сохранить бинарный ответ (base64) в файл через нативный диалог."""
+        import base64
+        try:
+            win = webview.active_window() or self._find_main_window()
+            if not win:
+                return {"ok": False, "error": "Окно не найдено"}
+            result = win.create_file_dialog(
+                _dialog_type("SAVE"),
+                save_filename=suggested_name or "response.bin",
+            )
+            if not result:
+                return {"ok": False, "cancelled": True}
+            path = result if isinstance(result, str) else result[0]
+            with open(path, "wb") as f:
+                f.write(base64.b64decode(b64_content))
+            logger.info(f"Binary response saved: {path}")
+            return {"ok": True, "path": path}
+        except Exception as e:
+            logger.error(f"save_binary_response failed: {e}")
+            return {"ok": False, "error": str(e)}
+
+    def oauth2_token(self, config):
+        """Получить OAuth 2.0 access-токен. config приходит из UI как dict."""
+        try:
+            from network import oauth2_fetch_token
+            c = config or {}
+            return oauth2_fetch_token(
+                token_url=c.get("tokenUrl", ""),
+                grant_type=c.get("grantType", "client_credentials"),
+                client_id=c.get("clientId", ""),
+                client_secret=c.get("clientSecret", ""),
+                username=c.get("username", ""),
+                password=c.get("password", ""),
+                scope=c.get("scope", ""),
+                client_auth=c.get("clientAuth", "body"),
+                verify_ssl=c.get("verifySsl", True),
+                proxy=c.get("proxy") or None,
+            )
+        except Exception as e:
+            logger.error(f"oauth2_token failed: {e}")
+            return {"ok": False, "error": str(e)}
 
     def set_request_timeout(self, seconds):
         """Применить таймаут запросов из настроек приложения.
@@ -775,14 +824,13 @@ class Api:
     def return_to_parent(self):
         """Действие по кнопке «Вернуть в главное окно» в дочернем окне."""
         win = webview.active_window()
-        state_json = self._detached_tab_state_json
-
+        # win.destroy() запускает on_closing, который сам вызывает
+        # _schedule_returned_tab — дополнительный вызов здесь давал бы
+        # двойную доставку и две вкладки в главном окне.
         try:
             win.destroy()
         except Exception:
             pass
-
-        self._schedule_returned_tab(state_json)
         return True
 
     # ========== SCRIPT EDITOR WINDOW ==========
@@ -1948,6 +1996,42 @@ class Api:
             logger.error(f"Export failed: {e}")
             return {"ok": False, "error": str(e)}
 
+    def export_files_to_folder(self, files):
+        """Сохранить несколько файлов в ОДНУ выбранную папку — один диалог.
+
+        files: [{'name': ..., 'content': ...}]. Раньше пакетный экспорт
+        (Postman / Bruno / OpenAPI сразу для всех коллекций) открывал
+        отдельное окно сохранения на КАЖДУЮ коллекцию — по два-три окна
+        подряд. Теперь спрашиваем папку один раз и пишем всё в неё.
+        """
+        try:
+            win = webview.active_window() or self._find_main_window()
+            if not win:
+                return {"ok": False, "error": "Окно не найдено"}
+
+            result = win.create_file_dialog(_dialog_type("FOLDER"))
+            if not result:
+                return {"ok": False, "cancelled": True}
+
+            folder = result if isinstance(result, str) else result[0]
+            written = []
+            for item in (files or []):
+                name = (item or {}).get("name")
+                content = (item or {}).get("content", "")
+                if not name:
+                    continue
+                # basename — чтобы имя файла не увело запись за пределы папки
+                dest = os.path.join(folder, os.path.basename(str(name)))
+                with open(dest, "w", encoding="utf-8") as f:
+                    f.write(content)
+                written.append(dest)
+
+            logger.info(f"Exported {len(written)} files to {folder}")
+            return {"ok": True, "dir": folder, "count": len(written)}
+        except Exception as e:
+            logger.error(f"export_files_to_folder failed: {e}")
+            return {"ok": False, "error": str(e)}
+
     def import_collection_file(self):
         """Диалог открытия: читает коллекцию из .json файла."""
         try:
@@ -1990,14 +2074,20 @@ class Api:
             try:
                 incoming = json.loads(collections_json)
                 new_cols = incoming.get("collections", []) if isinstance(incoming, dict) else incoming
-                if isinstance(new_cols, list) and len(new_cols) == 0 and os.path.exists(path):
+                if (isinstance(new_cols, list) and len(new_cols) == 0
+                        and os.path.exists(path)
+                        and not self._collections_loaded):
+                    # Пустой список ДО того, как фронтенд успел загрузить
+                    # коллекции — это гонка на старте, а не осознанное
+                    # «удалить всё». После загрузки (флаг снят) пустой
+                    # список считаем настоящим удалением и сохраняем.
                     with open(path, "r", encoding="utf-8") as f:
                         old = json.loads(f.read() or "{}")
                     old_cols = old.get("collections", []) if isinstance(old, dict) else old
                     if isinstance(old_cols, list) and len(old_cols) > 0:
                         logger.warning(
-                            "Refused to overwrite %d collections with an empty list",
-                            len(old_cols))
+                            "Refused to overwrite %d collections with an empty list "
+                            "(not loaded yet this session)", len(old_cols))
                         return False
             except Exception:
                 pass  # проверка не удалась — не блокируем сохранение
@@ -2044,6 +2134,10 @@ class Api:
         Загружает коллекции. При повреждённом файле пробует .bak —
         лучше вернуться на одно сохранение назад, чем потерять всё.
         """
+        # Фронтенд запросил коллекции — значит инициализация дошла до чтения.
+        # Теперь пустой список на сохранение — осознанное действие пользователя,
+        # и защита от «затирания пустым» больше не мешает удалить всё.
+        self._collections_loaded = True
         path = os.path.join(USER_DATA_DIR, "collections.json")
 
         def _read_valid(p):

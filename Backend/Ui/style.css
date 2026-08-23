@@ -128,14 +128,25 @@ body {
   max-width: 500px;
   background: var(--bg-panel);
   border-right: 1px solid var(--border-color);
-  overflow-y: auto;
-  overflow-x: hidden;
+  /* Скроллится не весь сайдбар, а внутренний #sidebar-scroll. Иначе ручка
+     ресайза (position:absolute внутри #sidebar) уезжала вверх вместе с
+     прокруткой — тянуть за неё можно было только в самом верху списка. */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   transition: width 0.22s ease, border-color 0.22s ease, opacity 0.18s ease;
   white-space: normal;
   position: relative;
   flex-shrink: 0;
 }
 #sidebar > * { min-width: 0; }
+.sidebar-header { flex: 0 0 auto; }
+#sidebar-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
 #collections-tree { padding-right: 4px; }
 
 #app-root.sidebar-collapsed #sidebar {
@@ -3584,4 +3595,86 @@ mark.jhit.jhit-active {
   color: var(--text-dim);
   line-height: 1.5;
   margin-top: 5px;
+}
+
+/* ── Бинарный ответ: превью картинки / карточка файла + скачать ── */
+.binary-response {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 16px;
+  text-align: center;
+}
+.binary-preview {
+  max-width: 100%;
+  max-height: 340px;
+  border-radius: var(--radius, 8px);
+  border: 1px solid var(--border-color);
+  background: repeating-conic-gradient(#0002 0% 25%, transparent 0% 50%) 50% / 20px 20px;
+}
+.binary-icon { font-size: 56px; color: var(--text-dim); }
+.binary-info {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-family: var(--font-mono, monospace);
+}
+
+/* ── OAuth 2.0: кнопка получения токена и статус ── */
+.oauth2-token-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.oauth2-token-status {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.oauth2-token-status.ok  { color: var(--status-2xx, #22a06b); }
+.oauth2-token-status.err { color: var(--status-5xx, #dc3545); }
+
+/* ── Массовый ввод key-value ── */
+.kv-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.kv-bulk-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.kv-bulk-area {
+  font-family: 'Consolas', 'JetBrains Mono', monospace;
+  font-size: 0.85rem;
+  width: 100%;
+}
+
+/* ── Автодополнение URL ── */
+.url-ac-box {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 4px);
+  box-shadow: 0 6px 24px rgba(0,0,0,.35);
+  max-height: 260px;
+  overflow-y: auto;
+}
+.url-ac-item {
+  padding: 6px 10px;
+  font-size: 12px;
+  font-family: 'Consolas', 'JetBrains Mono', monospace;
+  color: var(--text-main);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.url-ac-item:hover, .url-ac-item.active {
+  background: var(--accent-soft);
+}
+.url-ac-item mark {
+  background: transparent;
+  color: var(--accent);
+  font-weight: 600;
 }

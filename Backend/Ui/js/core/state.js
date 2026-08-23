@@ -320,6 +320,49 @@ function _stripCollection(c) {
   return { name: c.name, folders: JSON.parse(JSON.stringify(c.folders || [])) };
 }
 
+/**
+ * Единая точка сохранения экспортируемых файлов.
+ * Одна коллекция → нативный диалог «Сохранить файл».
+ * Несколько      → ОДИН диалог выбора папки, куда пишутся все файлы.
+ * Раньше пакетный экспорт (Postman/Bruno/OpenAPI для всех коллекций)
+ * открывал по окну сохранения на КАЖДУЮ коллекцию — это и был баг
+ * «экспорт открывает несколько окон подряд».
+ * files = [{ name, content }]
+ */
+App.exportFiles = async function (files) {
+  files = (files || []).filter(f => f && f.name);
+  if (!files.length) return { ok: false, error: "Нечего экспортировать" };
+
+  const api = window.pywebview && window.pywebview.api;
+
+  if (files.length === 1 && api?.export_collection_file) {
+    const res = await api.export_collection_file(files[0].name, files[0].content);
+    if (res?.cancelled) return { ok: false, cancelled: true };
+    if (!res?.ok) return { ok: false, error: res?.error };
+    return { ok: true, count: 1, path: res.path };
+  }
+
+  if (files.length > 1 && api?.export_files_to_folder) {
+    const res = await api.export_files_to_folder(
+      files.map(f => ({ name: f.name, content: f.content }))
+    );
+    if (res?.cancelled) return { ok: false, cancelled: true };
+    if (!res?.ok) return { ok: false, error: res?.error };
+    return { ok: true, count: res.count ?? files.length, dir: res.dir };
+  }
+
+  // Fallback — браузерное скачивание (нет pywebview)
+  files.forEach(f => {
+    const blob = new Blob([f.content], { type: "application/octet-stream" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = f.name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  return { ok: true, count: files.length };
+};
+
 /** Экспорт: col = объект коллекции или null (все) */
 App.exportCollections = async function (col) {
   const payload = App.buildExportPayload(col);
@@ -353,25 +396,11 @@ App.exportAsPostman = async function (col) {
   const cols = col ? [col] : App.USER_COLLECTIONS;
   if (!cols.length) return { ok: false, error: "Нет коллекций для экспорта" };
 
-  for (const c of cols) {
-    const pm = _toPostmanV21(c);
-    const json = JSON.stringify(pm, null, 2);
-    const filename = (c.name.replace(/[^\w\-]+/g, "_") || "collection") + ".postman_collection.json";
-
-    if (window.pywebview?.api?.export_collection_file) {
-      const res = await window.pywebview.api.export_collection_file(filename, json);
-      if (res?.cancelled) return { ok: false, cancelled: true };
-      if (!res?.ok) return { ok: false, error: res?.error };
-    } else {
-      const blob = new Blob([json], { type: "application/json" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(a.href);
-    }
-  }
-  return { ok: true, count: cols.length };
+  const files = cols.map(c => ({
+    name: (c.name.replace(/[^\w\-]+/g, "_") || "collection") + ".postman_collection.json",
+    content: JSON.stringify(_toPostmanV21(c), null, 2),
+  }));
+  return App.exportFiles(files);
 };
 
 /**
@@ -382,25 +411,14 @@ App.exportAsOpenApi = async function (col, format = "yaml") {
   const cols = col ? [col] : App.USER_COLLECTIONS;
   if (!cols.length) return { ok: false, error: "Нет коллекций" };
 
-  for (const c of cols) {
+  const files = cols.map(c => {
     const spec = _toOpenApi3(c);
-    const filename = (c.name.replace(/[^\w\-]+/g, "_") || "api") + ".openapi." + (format === "json" ? "json" : "yaml");
-    const content = format === "json" ? JSON.stringify(spec, null, 2) : _jsonToYaml(spec);
-
-    if (window.pywebview?.api?.export_collection_file) {
-      const res = await window.pywebview.api.export_collection_file(filename, content);
-      if (res?.cancelled) return { ok: false, cancelled: true };
-      if (!res?.ok) return { ok: false, error: res?.error };
-    } else {
-      const blob = new Blob([content], { type: "text/yaml" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(a.href);
-    }
-  }
-  return { ok: true, count: cols.length };
+    return {
+      name: (c.name.replace(/[^\w\-]+/g, "_") || "api") + ".openapi." + (format === "json" ? "json" : "yaml"),
+      content: format === "json" ? JSON.stringify(spec, null, 2) : _jsonToYaml(spec),
+    };
+  });
+  return App.exportFiles(files);
 };
 
 function _toOpenApi3(col) {
@@ -545,7 +563,7 @@ App.exportAsBruno = async function (col) {
   // Для Bruno правильно — папка с .bru файлами. Экспортируем как ZIP-like JSON
   // (полноценный zip без библиотек сложен; экспортируем один файл с содержимым)
   // Практическое решение: один .json со всеми .bru файлами как строками
-  for (const c of cols) {
+  const files = cols.map(c => {
     const fileMap = {};
     (c.folders || []).forEach(folder => {
       (folder.items || []).forEach(req => {
@@ -554,25 +572,13 @@ App.exportAsBruno = async function (col) {
         fileMap[key] = _reqToBru(req);
       });
     });
-
     // Сохраняем как JSON-манифест { "path/req.bru": "content" }
-    const content = JSON.stringify({ _type: "bruno_export", collection: c.name, files: fileMap }, null, 2);
-    const filename = (c.name.replace(/[^\w\-]+/g, "_") || "collection") + ".bruno.json";
-
-    if (window.pywebview?.api?.export_collection_file) {
-      const res = await window.pywebview.api.export_collection_file(filename, content);
-      if (res?.cancelled) return { ok: false, cancelled: true };
-      if (!res?.ok) return { ok: false, error: res?.error };
-    } else {
-      const blob = new Blob([content], { type: "application/json" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(a.href);
-    }
-  }
-  return { ok: true };
+    return {
+      name: (c.name.replace(/[^\w\-]+/g, "_") || "collection") + ".bruno.json",
+      content: JSON.stringify({ _type: "bruno_export", collection: c.name, files: fileMap }, null, 2),
+    };
+  });
+  return App.exportFiles(files);
 };
 
 function _jsonToYaml(obj, indent = 0) {

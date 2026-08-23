@@ -44,9 +44,9 @@
     </button>
 
     <!-- ── Рандомайзеры — используются постоянно, поэтому всегда на виду ── -->
-    <button id="randomizer-btn" class="nav-bar-btn nav-btn-accent" data-i18n-title="navRandomizer"
+    <button id="randomizer-btn" class="nav-bar-btn" data-i18n-title="navRandomizer"
             title="Рандомайзер (Ctrl+R)" onclick="UnifiedRandomizer.toggle()"><i class="bi bi-dice-5"></i></button>
-    <button id="data-generator-btn" class="nav-bar-btn nav-btn-accent" data-i18n-title="navGenerator"
+    <button id="data-generator-btn" class="nav-bar-btn" data-i18n-title="navGenerator"
             title="Генератор тестовых данных (Ctrl+G)" onclick="Generator.showModal()"><i class="bi bi-shuffle"></i></button>
 
     <div class="navbar-sep"></div>
@@ -87,7 +87,7 @@
     <div class="sidebar-header px-3 pt-3 pb-2">
       <div class="sidebar-section-title mb-0" data-i18n="collections">Коллекции</div>
     </div>
-    <div class="px-2">
+    <div class="px-2" id="sidebar-scroll">
       <div id="collections-tree"></div>
     </div>
     <div id="sidebar-resize-handle"></div>
@@ -227,6 +227,7 @@
 <script src="js/features/responseHistoryUI.js"></script>
 <script src="js/features/websocket.js"></script>
 <script src="js/features/metrics.js"></script>
+<script src="js/features/urlAutocomplete.js"></script>
 <script src="js/features/settings.js"></script>
 <script src="js/features/sync.js"></script>
 <script src="js/features/syncUI.js"></script>

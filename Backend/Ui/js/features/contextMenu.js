@@ -17,8 +17,27 @@
   };
 
   App.initContextMenu = function () {
-    document.addEventListener("click", App.hideTabContextMenu);
-    document.getElementById("tab-context-menu").addEventListener("click", (e) => {
+    const menuEl = document.getElementById("tab-context-menu");
+
+    // Закрываем меню при клике ВНЕ него. Слушаем в фазе перехвата (capture):
+    // обработчики на вкладках и кнопках нередко вызывают stopPropagation,
+    // и клик не всплывал до document — меню «прилипало» и закрывалось
+    // только при клике по самой вкладке. В capture это не помеха.
+    document.addEventListener("click", (e) => {
+      if (menuEl.contains(e.target)) return;  // по пункту меню — обработает его же слушатель
+      App.hideTabContextMenu();
+    }, true);
+
+    // Прокрутка, ресайз окна, потеря фокуса и Esc тоже убирают меню —
+    // иначе оно повиснет в старых координатах и обрежется у края экрана.
+    window.addEventListener("resize", App.hideTabContextMenu);
+    window.addEventListener("blur", App.hideTabContextMenu);
+    document.addEventListener("scroll", App.hideTabContextMenu, true);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") App.hideTabContextMenu();
+    });
+
+    menuEl.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-action]");
       if (!btn || contextMenuTabId === null) return;
       const action = btn.dataset.action;

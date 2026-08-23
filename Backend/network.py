@@ -73,6 +73,100 @@ def clear_all_cookies() -> None:
     _SESSION.cookies.clear()
 
 
+import base64 as _b64
+
+_TEXT_CTYPES = ("text/", "application/json", "application/xml", "application/xhtml",
+                "application/javascript", "application/x-www-form-urlencoded",
+                "application/graphql", "image/svg")
+
+_IMAGE_CTYPES = ("image/png", "image/jpeg", "image/jpg", "image/gif",
+                 "image/webp", "image/bmp", "image/x-icon", "image/vnd.microsoft.icon")
+
+
+def _is_texty(ctype):
+    """Ответ разумно показывать как текст?"""
+    c = (ctype or "").lower().split(";")[0].strip()
+    if not c:
+        return True
+    return any(c.startswith(t) or c == t for t in _TEXT_CTYPES)
+
+
+def oauth2_fetch_token(token_url, grant_type="client_credentials", client_id="",
+                       client_secret="", username="", password="", scope="",
+                       client_auth="body", verify_ssl=True, proxy=None):
+    """
+    Получает access-токен по OAuth 2.0.
+
+    Поддержаны server-to-server гранты, которые выполняются одним POST и не
+    требуют браузера:
+      - client_credentials — по client_id/secret
+      - password — по логину/паролю пользователя (Resource Owner Password)
+
+    client_auth: куда класть client_id/secret —
+      "body"  — в тело формы (client_id, client_secret)
+      "basic" — в заголовок Authorization: Basic base64(id:secret)
+
+    Возвращает {"ok": True, "token": "...", "raw": {...}, "expires_in": N}
+    или {"ok": False, "error": "..."}.
+    """
+    data = {"grant_type": grant_type}
+    if scope:
+        data["scope"] = scope
+    if grant_type == "password":
+        data["username"] = username
+        data["password"] = password
+
+    headers = {"Accept": "application/json"}
+    if client_auth == "basic" and client_id:
+        token = _b64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+        headers["Authorization"] = "Basic " + token
+    else:
+        if client_id:
+            data["client_id"] = client_id
+        if client_secret:
+            data["client_secret"] = client_secret
+
+    proxies = None
+    if proxy and proxy.strip():
+        proxies = {"http": proxy.strip(), "https": proxy.strip()}
+    if not verify_ssl:
+        try:
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        except Exception:
+            pass
+
+    try:
+        resp = _SESSION.post(token_url, data=data, headers=headers,
+                             timeout=REQUEST_TIMEOUT, verify=verify_ssl, proxies=proxies)
+    except requests.exceptions.RequestException as e:
+        return {"ok": False, "error": f"Не удалось получить токен: {e}"}
+
+    try:
+        payload = resp.json()
+    except ValueError:
+        return {"ok": False, "error": f"Токен-эндпоинт вернул не JSON (HTTP {resp.status_code}): "
+                                      + resp.text[:200]}
+
+    if resp.status_code >= 400:
+        # OAuth-ошибки приходят в полях error / error_description
+        msg = payload.get("error_description") or payload.get("error") or f"HTTP {resp.status_code}"
+        return {"ok": False, "error": f"OAuth: {msg}", "raw": payload}
+
+    access = payload.get("access_token")
+    if not access:
+        return {"ok": False, "error": "В ответе нет access_token", "raw": payload}
+
+    return {
+        "ok": True,
+        "token": access,
+        "token_type": payload.get("token_type", "Bearer"),
+        "expires_in": payload.get("expires_in"),
+        "refresh_token": payload.get("refresh_token", ""),
+        "raw": payload,
+    }
+
+
 def send_http_request(
     method: str,
     url: str,
@@ -81,6 +175,8 @@ def send_http_request(
     body: Optional[str],
     files: Optional[List[Dict[str, Any]]] = None,
     form_fields: Optional[List[Dict[str, str]]] = None,
+    verify_ssl: bool = True,
+    proxy: Optional[str] = None,
 ) -> dict:
     """Выполняет один HTTP-запрос, возвращает dict, готовый к JSON-сериализации.
 
@@ -115,6 +211,17 @@ def send_http_request(
             data_payload = body.encode("utf-8") if body else None
 
         start = time.time()
+        proxies = None
+        if proxy and proxy.strip():
+            proxies = {"http": proxy.strip(), "https": proxy.strip()}
+
+        if not verify_ssl:
+            try:
+                import urllib3
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            except Exception:
+                pass
+
         resp = _SESSION.request(
             method, url,
             params=clean_params,
@@ -124,6 +231,8 @@ def send_http_request(
             timeout=REQUEST_TIMEOUT,
             stream=True,   # чтобы контролировать размер ответа
             allow_redirects=True,
+            verify=verify_ssl,
+            proxies=proxies,
         )
         # TTFB — время до первого байта (headers received)
         ttfb_ms = round((time.time() - start) * 1000)
@@ -134,20 +243,17 @@ def send_http_request(
 
         elapsed_ms = round((time.time() - start) * 1000)
 
-        text = content.decode("utf-8", errors="replace")
-        if len(resp.content) > MAX_RESPONSE:
-            text += f"\n\n... [ответ обрезан: >{MAX_RESPONSE // (1024*1024)} МБ]"
+        ctype = resp.headers.get("Content-Type", "")
+        truncated = len(resp.content) > MAX_RESPONSE
 
-        # DNS + connect уже произошли — urllib3 не даёт их отдельно,
-        # но resp.elapsed даёт время от отправки запроса до первого байта ответа
         connect_ms = round(resp.elapsed.total_seconds() * 1000) if resp.elapsed else ttfb_ms
 
-        return {
+        result = {
             "ok": True,
             "status_code": resp.status_code,
             "reason": resp.reason,
-            "text": text,
             "headers": dict(resp.headers),
+            "content_type": ctype,
             "elapsed_ms": elapsed_ms,
             "timing": {
                 "total": elapsed_ms,
@@ -156,6 +262,23 @@ def send_http_request(
                 "size": len(content),   # response body size in bytes
             },
         }
+
+        if _is_texty(ctype):
+            result["text"] = content.decode("utf-8", errors="replace")
+            if truncated:
+                result["text"] += f"\n\n... [ответ обрезан: >{MAX_RESPONSE // (1024*1024)} МБ]"
+            result["is_binary"] = False
+        else:
+            # Бинарный ответ (картинка, PDF, архив). Раньше он декодировался
+            # в «текст» и показывался кашей из символов. Отдаём base64 —
+            # фронт покажет превью картинок и кнопку «Скачать» для остального.
+            result["is_binary"] = True
+            result["base64"] = _b64.b64encode(content).decode("ascii")
+            result["is_image"] = ctype.lower().split(";")[0].strip() in _IMAGE_CTYPES
+            kind = ctype.split(";")[0].strip() or "бинарные данные"
+            result["text"] = f"[{kind}, {len(content)} байт — предпросмотр/скачивание ниже]"
+
+        return result
 
     except requests.exceptions.MissingSchema:
         return _err("URL без схемы. Добавьте http:// или https://",

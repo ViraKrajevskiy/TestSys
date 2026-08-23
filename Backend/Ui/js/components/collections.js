@@ -302,12 +302,35 @@ window.App = window.App || {};
       App.showSidebarPositionMenu(e.currentTarget);
     });
 
-    // Свернуть всё: помечаем каждую коллекцию как collapsed и подчищаем
-    // expandedFolders, чтобы при следующем раскрытии всё было в свёрнутом
-    // виде (иначе внутри раскрытой коллекции все папки будут распахнуты).
-    wrap.querySelector("#collapse-all-btn").addEventListener("click", _collapseAll);
+    // Одна кнопка-переключатель: если всё свёрнуто — раскрывает всё, иначе
+    // сворачивает. Раньше было две отдельные кнопки; пользователь просил одну.
+    wrap.querySelector("#collapse-all-btn").addEventListener("click", () => _toggleCollapseAll());
+    // Иконку/подсказку выставляем после монтирования тулбара в DOM.
+    setTimeout(_syncCollapseBtn, 0);
 
     return wrap;
+  }
+
+  /** Все ли коллекции сейчас свёрнуты? */
+  function _allCollapsed() {
+    const cols = _allCollections();
+    return cols.length > 0 && cols.every(c => App.state.collapsedCollections[c.name]);
+  }
+
+  /** Синхронизирует иконку и подсказку кнопки с текущим состоянием. */
+  function _syncCollapseBtn() {
+    const btn = document.getElementById("collapse-all-btn");
+    if (!btn) return;
+    const collapsed = _allCollapsed();
+    const icon = btn.querySelector("i");
+    if (icon) icon.className = collapsed ? "bi bi-arrows-expand" : "bi bi-arrows-collapse";
+    btn.title = collapsed
+      ? (App.t("expandAll") || "Раскрыть всё")
+      : (App.t("collapseAll") || "Свернуть всё");
+  }
+
+  function _toggleCollapseAll() {
+    if (_allCollapsed()) _expandAll(); else _collapseAll();
   }
 
   function _collapseAll() {
@@ -316,6 +339,7 @@ window.App = window.App || {};
       App.state.expandedFolders[k] = false;
     });
     App.renderCollections();
+    _syncCollapseBtn();
   }
   function _expandAll() {
     App.state.collapsedCollections = {};
@@ -325,6 +349,7 @@ window.App = window.App || {};
       });
     });
     App.renderCollections();
+    _syncCollapseBtn();
   }
 
   /** Overflow-меню для сайдбара — вторичные действия. */
@@ -433,14 +458,9 @@ window.App = window.App || {};
           sub.addEventListener("mouseleave", (e) => {
             if (!btn.contains(e.relatedTarget)) _hideSub();
           });
-          sub.querySelectorAll(".sb-pos-item").forEach((sb, si) => {
-            sb.addEventListener("click", () => {
-              sub.style.display = "none";
-              menu.remove();
-              document.querySelectorAll(".sb-submenu").forEach(s => s.remove());
-              it.sub[si].on();
-            });
-          });
+          // Клик-обработчики уже добавлены в _buildMenu (ветка else).
+          // Дублировать их здесь нельзя — иначе каждый клик вызывает on() дважды
+          // и открывается два диалога подряд.
         } else {
           btn.addEventListener("click", () => {
             menu.remove();

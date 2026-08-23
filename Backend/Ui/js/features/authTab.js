@@ -33,6 +33,14 @@ window.App = window.App || {};
       bearer: { token: "" },
       basic:  { username: "", password: "", showPwd: false },
       apikey: { key: "X-API-Key", value: "", addTo: "header" },
+      oauth2: {
+        grantType: "client_credentials",  // или "password"
+        tokenUrl: "", clientId: "", clientSecret: "",
+        username: "", password: "", scope: "",
+        clientAuth: "body",               // body | basic
+        accessToken: "",                  // полученный токен
+        showSecret: false,
+      },
     };
   };
 
@@ -44,6 +52,11 @@ window.App = window.App || {};
     if (!owner.auth.bearer) owner.auth.bearer = { token: "" };
     if (!owner.auth.basic)  owner.auth.basic  = { username: "", password: "", showPwd: false };
     if (!owner.auth.apikey) owner.auth.apikey = { key: "X-API-Key", value: "", addTo: "header" };
+    if (!owner.auth.oauth2) owner.auth.oauth2 = {
+      grantType: "client_credentials", tokenUrl: "", clientId: "", clientSecret: "",
+      username: "", password: "", scope: "", clientAuth: "body",
+      accessToken: "", showSecret: false,
+    };
     return owner.auth;
   };
 
@@ -112,6 +125,7 @@ window.App = window.App || {};
     if (a.type === "bearer") return !!(a.bearer && a.bearer.token);
     if (a.type === "basic")  return !!(a.basic  && (a.basic.username || a.basic.password));
     if (a.type === "apikey") return !!(a.apikey && a.apikey.value);
+    if (a.type === "oauth2") return !!(a.oauth2 && a.oauth2.accessToken);
     return false;
   };
 
@@ -153,6 +167,12 @@ window.App = window.App || {};
           headersObj[k] = v;
         }
       }
+    }
+
+    if (auth.type === "oauth2" && auth.oauth2) {
+      // Токен получаем заранее кнопкой «Получить токен» и храним в accessToken.
+      const token = r(auth.oauth2.accessToken || "").trim();
+      if (token) headersObj["Authorization"] = "Bearer " + token;
     }
   };
 
@@ -237,6 +257,11 @@ window.App = window.App || {};
       const where = (auth.apikey && auth.apikey.addTo) === "query" ? "query" : "header";
       return `API Key · ${k || "key"} (${where})`;
     }
+    if (auth.type === "oauth2") {
+      const o = auth.oauth2 || {};
+      const g = o.grantType === "password" ? "Password" : "Client Credentials";
+      return "OAuth 2.0 · " + g + (o.accessToken ? " · токен получен" : " · токен не получен");
+    }
     return auth.type;
   };
 
@@ -261,6 +286,7 @@ window.App = window.App || {};
             <option value="bearer" ${auth.type === "bearer" ? "selected" : ""}>Bearer Token</option>
             <option value="basic"  ${auth.type === "basic"  ? "selected" : ""}>Basic Auth</option>
             <option value="apikey" ${auth.type === "apikey" ? "selected" : ""}>API Key</option>
+            <option value="oauth2" ${auth.type === "oauth2" ? "selected" : ""}>OAuth 2.0</option>
           </select>
         </div>
         <div id="auth-fields"></div>
@@ -476,6 +502,147 @@ window.App = window.App || {};
         ? `Добавляет query-параметр: <code>?${_esc(auth.apikey.key || "key")}=…</code>`
         : `Добавляет заголовок: <code>${_esc(auth.apikey.key || "key")}: …</code>`);
       return;
+    }
+
+    if (auth.type === "oauth2") {
+      const o = auth.oauth2;
+      const isPassword = o.grantType === "password";
+      container.innerHTML = `
+        <div class="auth-field-group">
+          <label class="auth-field-label">Grant Type</label>
+          <select class="form-select form-select-sm auth-field-input" data-auth="o-grant">
+            <option value="client_credentials" ${!isPassword ? "selected" : ""}>Client Credentials</option>
+            <option value="password" ${isPassword ? "selected" : ""}>Password (Resource Owner)</option>
+          </select>
+        </div>
+        <div class="auth-field-group">
+          <label class="auth-field-label">Access Token URL</label>
+          <input type="text" class="form-control form-control-sm auth-field-input" data-auth="o-url"
+                 placeholder="{{baseUrl}}/oauth/token" value="${_esc(o.tokenUrl)}">
+        </div>
+        <div class="auth-field-group">
+          <label class="auth-field-label">Client ID</label>
+          <input type="text" class="form-control form-control-sm auth-field-input" data-auth="o-cid"
+                 placeholder="{{clientId}}" value="${_esc(o.clientId)}">
+        </div>
+        <div class="auth-field-group">
+          <label class="auth-field-label">Client Secret</label>
+          <div class="auth-field-row">
+            <input type="${o.showSecret ? "text" : "password"}" class="form-control form-control-sm auth-field-input"
+                   data-auth="o-secret" placeholder="{{clientSecret}}" value="${_esc(o.clientSecret)}">
+            <button type="button" class="btn btn-sm btn-outline-secondary auth-eye-btn" data-auth="o-secret-toggle"
+                    title="${o.showSecret ? "Скрыть" : "Показать"}">
+              <i class="bi bi-eye${o.showSecret ? "-slash" : ""}"></i>
+            </button>
+          </div>
+        </div>
+        ${isPassword ? `
+        <div class="auth-field-group">
+          <label class="auth-field-label">Username</label>
+          <input type="text" class="form-control form-control-sm auth-field-input" data-auth="o-user"
+                 placeholder="{{username}}" value="${_esc(o.username)}">
+        </div>
+        <div class="auth-field-group">
+          <label class="auth-field-label">Password</label>
+          <input type="password" class="form-control form-control-sm auth-field-input" data-auth="o-pass"
+                 placeholder="{{password}}" value="${_esc(o.password)}">
+        </div>` : ""}
+        <div class="auth-field-group">
+          <label class="auth-field-label">Scope <span style="opacity:.6">(необязательно)</span></label>
+          <input type="text" class="form-control form-control-sm auth-field-input" data-auth="o-scope"
+                 placeholder="read write" value="${_esc(o.scope)}">
+        </div>
+        <div class="auth-field-group">
+          <label class="auth-field-label">Отправлять Client ID/Secret</label>
+          <select class="form-select form-select-sm auth-field-input" data-auth="o-clientauth">
+            <option value="body"  ${o.clientAuth !== "basic" ? "selected" : ""}>В теле запроса</option>
+            <option value="basic" ${o.clientAuth === "basic" ? "selected" : ""}>Заголовком Basic Auth</option>
+          </select>
+        </div>
+        <div class="oauth2-token-row">
+          <button type="button" class="btn send-btn btn-sm" data-auth="o-fetch">
+            <i class="bi bi-key"></i> Получить токен
+          </button>
+          <span class="oauth2-token-status" data-auth="o-status">${
+            o.accessToken ? "✓ токен получен" : "токен не получен"
+          }</span>
+        </div>
+        <div class="auth-field-group" style="margin-top:6px;">
+          <label class="auth-field-label">Access Token</label>
+          <textarea class="form-control form-control-sm auth-field-input" data-auth="o-token" rows="2"
+                    placeholder="появится после «Получить токен» или впишите вручную">${_esc(o.accessToken)}</textarea>
+        </div>`;
+
+      const bind = (sel, key) => {
+        const el = container.querySelector(sel);
+        if (el) el.addEventListener("input", e => { o[key] = e.target.value; onChange(); });
+      };
+      container.querySelector('[data-auth="o-grant"]').addEventListener("change", e => {
+        o.grantType = e.target.value; rerender();
+      });
+      bind('[data-auth="o-url"]', "tokenUrl");
+      bind('[data-auth="o-cid"]', "clientId");
+      bind('[data-auth="o-secret"]', "clientSecret");
+      bind('[data-auth="o-user"]', "username");
+      bind('[data-auth="o-pass"]', "password");
+      bind('[data-auth="o-scope"]', "scope");
+      bind('[data-auth="o-token"]', "accessToken");
+      container.querySelector('[data-auth="o-clientauth"]').addEventListener("change", e => {
+        o.clientAuth = e.target.value; onChange();
+      });
+      container.querySelector('[data-auth="o-secret-toggle"]').addEventListener("click", () => {
+        o.showSecret = !o.showSecret; rerender();
+      });
+      container.querySelector('[data-auth="o-fetch"]').addEventListener("click", () => {
+        App.oauth2FetchToken(o, container.querySelector('[data-auth="o-status"]'),
+                             container.querySelector('[data-auth="o-token"]'), onChange);
+      });
+
+      setHint(`После получения токена добавляет заголовок: <code>Authorization: Bearer &lt;token&gt;</code>`);
+      return;
+    }
+  };
+
+  /** Запрашивает токен у бэкенда и кладёт в поле accessToken. */
+  App.oauth2FetchToken = async function (o, statusEl, tokenEl, onChange) {
+    if (!o.tokenUrl || !o.tokenUrl.trim()) {
+      if (statusEl) { statusEl.textContent = "укажите Access Token URL"; statusEl.className = "oauth2-token-status err"; }
+      return;
+    }
+    if (!window.pywebview || !window.pywebview.api || !window.pywebview.api.oauth2_token) {
+      if (statusEl) statusEl.textContent = "недоступно вне приложения";
+      return;
+    }
+    const resolve = App.resolveAll || App.resolveVariables || (s => s);
+    if (statusEl) { statusEl.textContent = "запрашиваю…"; statusEl.className = "oauth2-token-status"; }
+
+    // Переменные раскрываем перед отправкой — {{clientId}} и т.п.
+    const cfg = {
+      tokenUrl: resolve(o.tokenUrl), grantType: o.grantType,
+      clientId: resolve(o.clientId || ""), clientSecret: resolve(o.clientSecret || ""),
+      username: resolve(o.username || ""), password: resolve(o.password || ""),
+      scope: resolve(o.scope || ""), clientAuth: o.clientAuth || "body",
+      verifySsl: App.getSetting ? App.getSetting("verifySsl") !== false : true,
+      proxy: (App.getSetting && App.getSetting("proxyUrl")) || null,
+    };
+    try {
+      const res = await window.pywebview.api.oauth2_token(cfg);
+      if (res && res.ok) {
+        o.accessToken = res.token;
+        if (tokenEl) tokenEl.value = res.token;
+        if (statusEl) {
+          const exp = res.expires_in ? ` · живёт ${res.expires_in}s` : "";
+          statusEl.textContent = "✓ токен получен" + exp;
+          statusEl.className = "oauth2-token-status ok";
+        }
+        onChange && onChange();
+        App.renderTabBar && App.renderTabBar();
+      } else {
+        if (statusEl) { statusEl.textContent = (res && res.error) || "ошибка"; statusEl.className = "oauth2-token-status err"; }
+        App.logWarn && App.logWarn("OAuth2", (res && res.error) || "не удалось получить токен");
+      }
+    } catch (e) {
+      if (statusEl) { statusEl.textContent = String(e); statusEl.className = "oauth2-token-status err"; }
     }
   };
 

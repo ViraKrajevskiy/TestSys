@@ -31,6 +31,8 @@ window.App = window.App || {};
     maxUrlLength: 2048,
     maxResponseDisplayKB: 1000,  // КБ — обрезка в UI
     requestTimeoutSec: 30,
+    verifySsl: true,
+    proxyUrl: "",
     sidebarWidth: 240,
 
     // Рандомайзер: "floating" — панель внутри окна, "window" — отдельное окно ОС
@@ -347,6 +349,17 @@ window.App = window.App || {};
                 <div class="col-6 col-md-4">
                   <label class="form-label" style="font-size:11px;" data-i18n="timeout">Таймаут (сек)</label>
                   <input type="number" class="form-control form-control-sm" id="set-timeout" min="1" max="300">
+                </div>
+                <div class="col-12 col-md-6">
+                  <label class="form-label" style="font-size:11px;" data-i18n="proxyUrl">Прокси (http://host:port)</label>
+                  <input type="text" class="form-control form-control-sm" id="set-proxy" placeholder="пусто = без прокси">
+                </div>
+                <div class="col-12 col-md-6 d-flex align-items-end">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="set-verify-ssl">
+                    <label class="form-check-label" for="set-verify-ssl" style="font-size:12px;"
+                           data-i18n="verifySsl">Проверять SSL-сертификат</label>
+                  </div>
                 </div>
               </div>
               <div class="form-text" style="font-size:10px;margin-top:6px;" data-i18n="limitsHint">
@@ -690,6 +703,8 @@ window.App = window.App || {};
     document.getElementById("set-max-url").value           = s.maxUrlLength;
     document.getElementById("set-max-resp").value          = s.maxResponseDisplayKB;
     document.getElementById("set-timeout").value           = s.requestTimeoutSec;
+    document.getElementById("set-verify-ssl").checked      = s.verifySsl !== false;
+    document.getElementById("set-proxy").value             = s.proxyUrl || "";
   }
 
   function readForm() {
@@ -713,6 +728,8 @@ window.App = window.App || {};
     _settings.maxUrlLength         = clamp(+document.getElementById("set-max-url").value, 256, 65536);
     _settings.maxResponseDisplayKB = clamp(+document.getElementById("set-max-resp").value, 100, 50000);
     _settings.requestTimeoutSec    = clamp(+document.getElementById("set-timeout").value, 1, 300);
+    _settings.verifySsl            = document.getElementById("set-verify-ssl").checked;
+    _settings.proxyUrl             = document.getElementById("set-proxy").value.trim();
   }
 
   function clamp(v, min, max) { return Math.max(min, Math.min(max, v || min)); }
