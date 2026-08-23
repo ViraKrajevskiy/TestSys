@@ -23,7 +23,24 @@ MAX_BODY_SIZE     = 512 * 1024          # 512 КБ — макс. размер JS
 MAX_RESPONSE      = 5 * 1024 * 1024     # 5 МБ — макс. размер ответа (обрезаем)
 MAX_FILE_SIZE     = 50 * 1024 * 1024    # 50 МБ — на один загружаемый файл
 MAX_TOTAL_UPLOAD  = 100 * 1024 * 1024   # 100 МБ — суммарно за один запрос
-REQUEST_TIMEOUT   = 30                  # секунд
+REQUEST_TIMEOUT   = 30                  # секунд — значение по умолчанию
+
+
+def set_request_timeout(seconds):
+    """
+    Меняет таймаут запросов. Зовётся из настроек приложения.
+
+    Раньше поле «Таймаут» в настройках существовало и сохранялось, но сюда
+    ничего не передавало: здесь стояла константа, и настройка не влияла
+    ни на что.
+    """
+    global REQUEST_TIMEOUT
+    try:
+        n = int(seconds)
+    except (TypeError, ValueError):
+        return REQUEST_TIMEOUT
+    REQUEST_TIMEOUT = max(1, min(n, 3600))
+    return REQUEST_TIMEOUT
 
 # Persistent session — сохраняет куки между запросами
 _SESSION = requests.Session()

@@ -68,9 +68,14 @@ window.addReturnedTab = function (tabState) {
   function install() {
     if (!App.renderAll || App.renderAll._detachedPatched) return;
     const orig = App.renderAll;
-    App.renderAll = function () {
-      orig.call(App);
+    // Пробрасываем аргументы (...args). Сейчас renderAll вызывается без них,
+    // но ровно такая обёртка вокруг sendRequest в scriptConsole.js глотала
+    // второй аргумент — и авто-обновление токена уходило в бесконечный цикл.
+    // Пусть эта мина не ждёт своего часа.
+    App.renderAll = function (...args) {
+      const result = orig.apply(App, args);
       App.syncDetachedStateToHost();
+      return result;
     };
     App.renderAll._detachedPatched = true;
   }

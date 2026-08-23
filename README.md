@@ -1,46 +1,77 @@
 # TestSys
 
-**TestSys** — десктопный клиент для тестирования REST API. Работает как автономное приложение без браузера и без облака: все данные хранятся локально.
+**TestSys** — десктопный клиент для тестирования REST API, вдохновлённый Postman. Работает как автономное приложение без браузера и без облака: все данные хранятся локально.
+
+Версия 1.1.1 · Windows / Linux / macOS
 
 ---
 
 ## ✨ Возможности
 
-### Основные
-- **HTTP-запросы** — GET, POST, PUT, PATCH, DELETE с поддержкой Params, Headers, Body
-- **Auth Tab** — Bearer Token, Basic Auth, API Key (header или query param)
-- **Pre-request Scripts** — JavaScript, выполняется перед отправкой запроса
-- **Tests** — автоматические проверки ответа с поддержкой `pm.test` / `expect`
-- **Вкладки** — неограниченное количество, можно открыть в отдельном окне
-- **Коллекции** — организация запросов по папкам, drag & drop для сортировки
+### Запросы
+- **HTTP-методы** — GET, POST, PUT, PATCH, DELETE с поддержкой Params, Headers, Body, User-Agent
+- **Вкладки** — до 20 одновременно, любую можно оторвать в отдельное окно
+- **Сессия** — открытые вкладки восстанавливаются после перезапуска
+- **Коллекции** — организация запросов по папкам, drag & drop, поиск по дереву
+- **Ctrl+S** — сохранить правки вкладки обратно в запрос коллекции
 - **Environments** — профили переменных (dev / staging / prod), мгновенное переключение
 - **Динамические переменные** — `{{$randomEmail}}`, `{{$uuid}}`, `{{$isoTimestamp}}` и десятки других
+- **Multipart** — загрузка файлов (фото, видео) вместе с полями формы
 
-### Инструменты
+### Авторизация
+- **Типы** — Bearer Token, Basic Auth, API Key (в header или query)
+- **Наследование** — запрос → папка → коллекция, как в Postman/Insomnia/Bruno.
+  Задаёте авторизацию один раз на коллекции — все запросы внутри подхватывают её.
+- **Авто-обновление токена** — при 401 TestSys сам дёргает refresh-эндпоинт,
+  обновляет переменную с токеном и повторяет запрос. С защитой от штормов:
+  одно обновление на все вкладки, пауза между попытками, предохранитель.
+- **Диагностика** — при 401/403 под ответом объясняется причина: пустая
+  переменная, No Auth или какой заголовок реально ушёл на сервер.
+
+### Работа с ответом
+- **Подсветка JSON** — ключи, строки, числа, bool, null
+- **Клик по значению** — копирует его в буфер (строки — без кавычек)
+- **Сворачивание узлов** со счётчиком: `[ … 12 элементов ]`
+- **Ctrl+F** — поиск по ответу с подсветкой, счётчиком и навигацией
+- **ПКМ по значению** — копировать значение / путь (`user.email`) / сохранить в переменную
+- **Таблица** — CRUD-сущности из ответа рендерятся таблицей
+- **Response History** — история ответов по каждому запросу
+
+### Скрипты
+- **Pre-request** — JavaScript перед отправкой запроса
+- **Tests** — проверки ответа с `pm.test` / `expect`
+- **pm-API** — `pm.variables`, `pm.request`, `pm.response`, консоль скриптов
+- **Script Editor** — Pre-request и Tests открываются в отдельном окне
+
+### Инструменты тестирования
 - **Collection Runner** — прогон всей коллекции по порядку с отчётом
 - **Load Test** — нагрузочное тестирование с настройкой RPS и длительности
 - **Parallel Test** — одновременный запуск нескольких запросов
 - **Metrics** — история запросов с графиком времени ответа
-- **Randomizer** — генерация случайных данных по шаблонам
-- **Data Generator** — создание тестовых наборов данных
-- **Cookie Manager** — просмотр и редактирование cookies
-- **WebSocket** — поддержка WS-соединений
-- **Script Editor** — Pre-request и Tests открываются в отдельном окне без UI
 
-### Интерфейс
-- **Тёмная / светлая тема** с кастомизацией цветов
-- **i18n** — русский и английский узбекский интерфейс 
-- **Sidebar** — дерево коллекций с поиском, плавная анимация
-- **Response History** — история ответов по каждому запросу
-- **Swagger / OpenAPI** — импорт и просмотр спецификаций
+### Генерация данных
+- **Randomizer** — случайные данные по шаблонам (User, Product, Order, Юрлицо РФ/UZ и др.)
+- **Data Generator** — автозаполнение тела запроса по схеме
+
+### Импорт / экспорт
+- **Swagger / OpenAPI** — импорт спецификации (readOnly-поля не попадают в тело запроса)
 - **cURL** — импорт и экспорт запросов
-- **Code Generator** — генерация кода запроса (Python, JS, Go и др.)
-- **Hotkeys** — полный набор горячих клавиш
+- **Code Generator** — генерация кода: Python (requests), JavaScript (fetch, axios), cURL
+- **Экспорт коллекций** — в форматы Postman, Bruno, OpenAPI
+
+### Ещё
+- **WebSocket** — нативный WS-клиент (ws:// и wss://)
+- **Cookie Manager** — просмотр и редактирование cookies
+- **Встроенный терминал** — `` Ctrl+` ``
+- **Тёмная / светлая тема** с кастомизацией цветов
+- **i18n** — русский, английский и узбекский интерфейс
+- **Hotkeys** — полный набор горячих клавиш с переназначением в настройках
 
 ### Совместная работа
-- **Sync** — синхронизация коллекций между участниками команды
+- **Sync** — синхронизация коллекций по локальной сети (один компьютер — хост)
 - **Users** — управление пользователями через встроенный бэкенд
-- **Shared Collections** — общие коллекции с разграничением прав
+- **Shared Collections** — общие коллекции с разграничением прав.
+  Секретные переменные (токены, пароли) при синхронизации не передаются.
 
 ---
 
@@ -49,31 +80,37 @@
 ```
 TestSys/
 ├── Backend/                  # Desktop-приложение (pywebview)
-│   ├── main.py               # Точка входа, запуск UI
+│   ├── main.py               # Точка входа, запуск UI и бэкенда
 │   ├── api.py                # Python ↔ JS bridge (все API-методы)
-│   ├── network.py            # HTTP-запросы
+│   ├── network.py            # HTTP-запросы (requests)
 │   ├── cli.py                # CLI-режим (CI/CD)
-│   ├── sync_server.py        # Сервер совместной работы
+│   ├── sync_server.py        # LAN-сервер совместной работы
+│   ├── updater.py            # Автообновление с GitHub Releases
 │   └── Ui/                   # Фронтенд (vanilla JS)
 │       ├── index.html
 │       ├── style.css
-│       ├── script-editor.html  # Отдельное окно редактора скриптов
+│       ├── script-editor.html
 │       └── js/
-│           ├── core/           # i18n, state, hotkeys, scripting...
-│           ├── features/       # auth, environments, loadTest...
-│           └── components/     # tabContent, collections, tabBar
+│           ├── core/         # state, i18n, hotkeys, scripting, swagger…
+│           ├── features/     # authTab, environments, loadTest, sync…
+│           └── components/   # tabContent, collections, tabBar
 │
-├── testsys_backend/          # FastAPI бэкенд (данные, пользователи)
+├── testsys_backend/          # Демо-API для тренировки (FastAPI + SQLite)
 │   ├── main.py
 │   ├── database.py
 │   ├── models.py
 │   ├── crud.py
 │   └── schemas.py
 │
+├── tests/                    # Автотесты
+│   ├── test_*.py             # Python (pytest)
+│   ├── js/test_*.js          # JS (node)
+│   ├── run_tests.bat         # Прогон всех тестов (Windows)
+│   └── run_tests.sh          # Прогон всех тестов (Linux/macOS/CI)
+│
 ├── TestSys.spec              # PyInstaller — сборка в .exe
 ├── build.bat                 # Скрипт сборки (Windows)
-├── run.bat                   # Быстрый запуск (Windows)
-└── run.sh                    # Быстрый запуск (Linux/macOS)
+├── run.bat / run.sh          # Быстрый запуск
 ```
 
 ---
@@ -87,11 +124,10 @@ TestSys/
 ### Установка и запуск
 
 ```bash
-# Клонировать репозиторий
 git clone https://github.com/ViraKrajevskiy/TestSys.git
 cd TestSys
 
-# Windows — двойной клик или из терминала:
+# Windows:
 run.bat
 
 # Linux / macOS:
@@ -99,11 +135,8 @@ chmod +x run.sh
 ./run.sh
 ```
 
-`run.bat` / `run.sh` автоматически:
-1. Создаёт виртуальное окружение
-2. Устанавливает зависимости
-3. Запускает FastAPI бэкенд на `http://127.0.0.1:8000`
-4. Открывает десктопное окно приложения
+`run.bat` / `run.sh` автоматически создают виртуальное окружение,
+ставят зависимости, поднимают демо-бэкенд и открывают окно приложения.
 
 ### Ручной запуск (dev-режим)
 
@@ -114,13 +147,30 @@ python main.py
 
 ---
 
+## 🧪 Тесты
+
+```bash
+# Всё сразу:
+cd tests
+run_tests.bat        # Windows
+./run_tests.sh       # Linux/macOS/CI
+
+# По отдельности:
+python -m pytest . --ignore=js     # Python
+node js/test_auth.js               # конкретный JS-набор
+```
+
+Покрыто: наследование авторизации, авто-обновление токена и защита от
+бесконечного цикла, фильтр readOnly при импорте OpenAPI, сессия вкладок,
+настройка таймаута, сеть, cURL, синхронизация, автообновление.
+
+---
+
 ## 📦 Сборка .exe (Windows)
 
 ```bash
-# Из корня проекта:
 build.bat
-
-# Или напрямую через PyInstaller:
+# или напрямую:
 pyinstaller TestSys.spec
 ```
 
@@ -128,26 +178,24 @@ pyinstaller TestSys.spec
 
 ---
 
-## 🧪 Scripting API
+## 🧩 Scripting API
 
 TestSys поддерживает pm-совместимые скрипты в Pre-request и Tests.
 
 ```javascript
-// Pre-request: установить переменную
+// Pre-request: подготовить запрос
 pm.variables.set("token", "abc123");
 pm.request.headers.set("Authorization", "Bearer " + pm.variables.get("token"));
 
-// Tests: проверить ответ
+// Tests: проверить ответ и сохранить токен
 pm.test("Статус 200", () => pm.response.to.have.status(200));
-pm.test("Есть id", () => {
-  expect(pm.response.json().id).toBeDefined();
-});
-
-// Сохранить значение из ответа
-pm.variables.set("userId", pm.response.json().id);
+if (pm.response.code === 200) {
+  pm.variables.set("token", pm.response.json().access);
+}
 ```
 
-Скрипты открываются в **отдельном окне** (кнопка «Открыть отдельно ↗») с подсветкой, сниппетами и запуском по `Ctrl+Enter`.
+Скрипты можно открыть в **отдельном окне** с подсветкой, сниппетами и
+запуском по `Ctrl+Enter`.
 
 ---
 
@@ -156,11 +204,17 @@ pm.variables.set("userId", pm.response.json().id);
 | Действие | Клавиша |
 |---|---|
 | Новая вкладка | `Ctrl+T` |
-| Отправить запрос | `Enter` (в поле URL) |
-| Запустить скрипт | `Ctrl+Enter` |
-| Сохранить скрипт | `Ctrl+S` |
-| Терминал | `` Ctrl+` `` |
 | Закрыть вкладку | `Ctrl+W` |
+| Отправить запрос | `Ctrl+Enter` |
+| Сохранить запрос в коллекцию | `Ctrl+S` |
+| Поиск по ответу | `Ctrl+F` |
+| Рандомайзер | `Ctrl+R` |
+| Генератор данных | `Ctrl+G` |
+| Терминал | `` Ctrl+` `` |
+| Скрыть/показать сайдбар | `Ctrl+B` |
+| Настройки | `Ctrl+,` |
+
+Все сочетания переназначаются в настройках.
 
 ---
 
@@ -169,8 +223,10 @@ pm.variables.set("userId", pm.response.json().id);
 | Слой | Стек |
 |---|---|
 | UI | Vanilla JS, Bootstrap 5.3, Bootstrap Icons |
-| Desktop | Python 3, pywebview 6.x (WebView2 / WKWebView) |
-| Backend | FastAPI, SQLAlchemy, SQLite, Uvicorn |
+| Desktop | Python 3, pywebview 6.x (WebView2 / WKWebView), requests |
+| Демо-бэкенд | FastAPI, SQLAlchemy, SQLite, Uvicorn, Pydantic |
+| Синхронизация | HTTP-сервер на стандартной библиотеке |
+| Тесты | pytest, node |
 | Сборка | PyInstaller |
 
 ---

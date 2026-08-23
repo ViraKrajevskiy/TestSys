@@ -657,6 +657,21 @@ class Api:
         return send_http_request(method, url, headers, params, body,
                                  files=files, form_fields=form_fields)
 
+    def set_request_timeout(self, seconds):
+        """Применить таймаут запросов из настроек приложения.
+
+        До этого поле «Таймаут (сек)» в настройках было декоративным:
+        значение сохранялось в settings.json и никуда дальше не шло.
+        """
+        try:
+            from network import set_request_timeout as _set
+            applied = _set(seconds)
+            logger.info(f"Request timeout: {applied} s")
+            return {"ok": True, "timeout": applied}
+        except Exception as e:
+            logger.error(f"set_request_timeout failed: {e}")
+            return {"ok": False, "error": str(e)}
+
     def pick_files(self, allow_multiple=True):
         """Открывает нативный диалог выбора файлов для мультипарт-загрузки.
 

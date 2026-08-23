@@ -51,6 +51,30 @@ window.App = window.App || {};
   // ============================================================
   // APPLY — синхронизировать настройки с App.LIMITS и другими модулями
   // ============================================================
+  /** Отправляет таймаут в Python — там он станет значением по умолчанию. */
+  async function _pushTimeoutToBackend(sec) {
+    const n = parseInt(sec, 10);
+    if (!Number.isFinite(n) || n < 1) return;
+    try {
+      const api = window.pywebview && window.pywebview.api;
+      if (api && api.set_request_timeout) await api.set_request_timeout(n);
+    } catch (e) {
+      console.warn("[Settings] не удалось применить таймаут:", e);
+    }
+  }
+
+  /**
+   * Пользователь сменил Base URL в диалоге настроек — это явное действие,
+   * поэтому переменную обновляем. В отличие от простой загрузки настроек.
+   */
+  function applyApiBaseUrlFromForm(newUrl) {
+    if (!newUrl) return;
+    if (App.VARIABLES.baseUrl === newUrl) return;
+    App.VARIABLES.baseUrl = newUrl;
+    App.saveCollections && App.saveCollections();
+    App.renderCollections && App.renderCollections();
+  }
+
   function applySettings(s) {
     _settings = Object.assign({}, DEFAULTS, s);
 
@@ -70,14 +94,28 @@ window.App = window.App || {};
     App.LIMITS.MAX_URL_LENGTH       = _settings.maxUrlLength;
     App.LIMITS.MAX_RESPONSE_DISPLAY = _settings.maxResponseDisplayKB * 1024;
 
-    // Обновить API_BASE в state
-    App.VARIABLES.baseUrl = _settings.apiBaseUrl;
+    // baseUrl — ОДИН источник правды: переменная {{baseUrl}} в панели слева.
+    // Раньше здесь стояло безусловное присваивание, и настройка молча
+    // затирала то, что пользователь вписал в переменные: при каждой загрузке
+    // настроек и при каждом сохранении. Плюс loadSettings() и
+    // loadCollections() стартуют параллельно и гонятся за это же значение.
+    // Теперь настройка работает как значение по умолчанию: подставляется,
+    // только если переменной ещё нет. Явную смену через диалог настроек
+    // обрабатывает applyApiBaseUrlFromForm() — там это осознанное действие.
+    if (!App.VARIABLES.baseUrl) {
+      App.VARIABLES.baseUrl = _settings.apiBaseUrl;
+    }
 
     // Логирование: глушим только ВЫВОД в консоль.
     // Запись ошибок в лог продолжается всегда — иначе нечего будет показать
     // в просмотрщике, когда что-то сломается.
     const silenced = !_settings.loggingEnabled || _settings.logLevel === "off";
     App.setConsoleSilenced && App.setConsoleSilenced(silenced);
+
+    // Таймаут запроса. Поле в настройках существовало, значение сохранялось,
+    // но до network.py не доходило — там был захардкожен 30 сек, и настройка
+    // не делала ровным счётом ничего.
+    _pushTimeoutToBackend(_settings.requestTimeoutSec);
     App.setLogLevel && App.setLogLevel(_settings.logLevel);
 
     // Лимиты хранения: буфер в памяти, история метрик и ротация файла
@@ -658,6 +696,9 @@ window.App = window.App || {};
     _settings.language             = document.getElementById("set-language").value;
     _settings.autoCheckUpdates     = document.getElementById("set-auto-updates").checked;
     _settings.apiBaseUrl           = document.getElementById("set-api-url").value.trim() || DEFAULTS.apiBaseUrl;
+    // Смена Base URL прямо в диалоге — осознанное действие, поэтому
+    // переменную {{baseUrl}} здесь обновляем (при обычной загрузке — нет).
+    applyApiBaseUrlFromForm(_settings.apiBaseUrl);
     _settings.loggingEnabled       = document.getElementById("set-logging-enabled").checked;
     _settings.logLevel             = document.getElementById("set-log-level").value;
     _settings.maxLogFileMB         = clamp(+document.getElementById("set-log-mb").value, 1, 200);

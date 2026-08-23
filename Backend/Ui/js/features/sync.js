@@ -65,11 +65,44 @@ window.App = window.App || {};
 
   function api() { return window.pywebview && window.pywebview.api; }
 
+  // Переменные с такими именами — это личные секреты, а не общая настройка
+  // коллекции. Отправлять их коллегам нельзя: там лежат живые токены и пароли.
+  const SECRET_VAR_RE = /(token|refresh|password|passwd|secret|apikey|api_key|auth|credential|cookie|session|bearer|jwt)/i;
+
+  /** Имена переменных, которые не уходят в синхронизацию. */
+  App.syncSecretVars = function (vars) {
+    return Object.keys(vars || {}).filter(k => SECRET_VAR_RE.test(k));
+  };
+
+  /** Копия переменных без секретов. */
+  function _publicVariables() {
+    const out = {};
+    const skipped = [];
+    Object.entries(App.VARIABLES || {}).forEach(([k, v]) => {
+      if (SECRET_VAR_RE.test(k)) { skipped.push(k); return; }
+      out[k] = v;
+    });
+    if (skipped.length) {
+      App.logWarn && App.logWarn("Sync",
+        `Не отправлены личные переменные: ${skipped.join(", ")}. ` +
+        `Токены и пароли остаются только на этом компьютере.`);
+    }
+    return out;
+  }
+
   /** Документ для отправки */
   function _buildDoc(baseVersion) {
     return {
-      collections: App.USER_COLLECTIONS.map(c => ({ name: c.name, folders: c.folders })),
-      variables: Object.assign({}, App.VARIABLES),
+      // auth и tokenRefresh обязаны ехать вместе с коллекцией — без них
+      // у коллеги пропадёт вся настройка авторизации (и наоборот: приняв
+      // такой документ, он затрёт свою собственную).
+      collections: App.USER_COLLECTIONS.map(c => ({
+        name: c.name,
+        auth: c.auth,
+        tokenRefresh: c.tokenRefresh,
+        folders: c.folders,
+      })),
+      variables: _publicVariables(),
       client_name: clientName(),
       base_version: baseVersion,
     };
@@ -79,10 +112,18 @@ window.App = window.App || {};
   function _applyDoc(doc, mergeVars) {
     if (!doc || !Array.isArray(doc.collections)) return false;
     App.USER_COLLECTIONS = doc.collections.map(c => ({
-      name: c.name, builtin: false, folders: c.folders || [],
+      name: c.name,
+      builtin: false,
+      folders: c.folders || [],
+      // Сохраняем настройку авторизации. Раньше эти поля здесь терялись,
+      // и каждый приём документа стирал авторизацию коллекции локально.
+      auth: c.auth,
+      tokenRefresh: c.tokenRefresh,
     }));
     if (mergeVars !== false && doc.variables) {
       Object.entries(doc.variables).forEach(([k, v]) => {
+        // Секреты не принимаем даже если прислали — свои токены дороже
+        if (SECRET_VAR_RE.test(k)) return;
         if (!(k in App.VARIABLES)) App.VARIABLES[k] = v;
       });
     }
