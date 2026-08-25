@@ -18,7 +18,7 @@ window.App = window.App || {};
   App.startTutorial = async function () {
     // Уже загружено в этой сессии — просто запускаем заново, без скачивания.
     if (App.__tutorial && typeof App.__tutorial.start === "function") {
-      App.__tutorial.start();
+      _runTour();
       return;
     }
     if (_loading) return;
@@ -61,11 +61,40 @@ window.App = window.App || {};
       if (res.offline) {
         App.syncToast && App.syncToast("Нет сети — открываю сохранённую копию обучения");
       }
-      App.__tutorial.start();
+      _runTour();
     } finally {
       _loading = false;
     }
   };
+
+  /**
+   * Запуск тура. Сначала закрываем открытые модалки (в т.ч. Справку, из которой
+   * тур мог быть вызван) — иначе окно висит поверх/позади подсветки. Это дубль
+   * страховки на уровне сборки: не зависит от версии скачанного дополнения.
+   */
+  function _runTour() {
+    const closed = _closeOpenModals();
+    setTimeout(() => {
+      if (App.__tutorial && typeof App.__tutorial.start === "function") App.__tutorial.start();
+    }, closed ? 240 : 0);
+  }
+
+  /** Закрыть все видимые bootstrap-модалки и убрать подложки. Вернёт true, если что-то закрыли. */
+  function _closeOpenModals() {
+    let any = false;
+    document.querySelectorAll(".modal.show").forEach(m => {
+      any = true;
+      try {
+        const inst = window.bootstrap && bootstrap.Modal.getInstance(m);
+        if (inst) inst.hide();
+        else { m.classList.remove("show"); m.style.display = "none"; }
+      } catch (_) {}
+    });
+    if (any) {
+      setTimeout(() => document.querySelectorAll(".modal-backdrop").forEach(b => b.remove()), 260);
+    }
+    return any;
+  }
 
   /** Выполнить скачанный код: добавляем <script> с исходником в документ. */
   function _inject(src) {
