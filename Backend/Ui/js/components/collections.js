@@ -367,7 +367,13 @@ window.App = window.App || {};
     const items = [
       { icon: "bi-box-arrow-in-down", label: "Импорт…", sub: [
           { icon: "bi-file-earmark-arrow-up", label: "Файл TestSys (.json)", on: () => _doImport("Импортировано") },
-          { icon: "bi-p-circle",              label: "Postman Collection",    on: () => _doImport("Постман") },
+          { icon: "bi-p-circle",              label: "Postman Collection",    on: async () => {
+              if (!App.importPostmanCollection) { _doImport("Постман"); return; }
+              const res = await App.importPostmanCollection();
+              if (res.cancelled) return;
+              if (res.ok) App.showAlert("✓ Postman: " + res.added.join(", "));
+              else App.showAlert((App.t("error") || "Ошибка") + ": " + res.error);
+            } },
           { icon: "bi-moon-stars",            label: "Insomnia Export",       on: () => _doImport("Insomnia") },
           { icon: "bi-braces",                label: "Bruno (.bru.json)",     on: () => _doImport("Bruno") },
           { icon: "bi-file-earmark-code",     label: "Swagger / OpenAPI",     on: () => { App.showSwaggerImport && App.showSwaggerImport(); } },
@@ -759,6 +765,11 @@ window.App = window.App || {};
         // кладёт токен в переменную, приходилось бы вписывать каждый раз.
         preScript: entry.preScript || "",
         testScript: entry.testScript || "",
+        // Опции запроса (SSL, редиректы, таймаут, описание)
+        description: entry.description || "",
+        ignoreSsl: !!entry.ignoreSsl,
+        followRedirects: entry.followRedirects !== false,
+        timeoutSec: entry.timeoutSec || 0,
       };
       if (entry.body) { overrides.body = entry.body; overrides.activeSubTab = "body"; }
       if (["POST", "PUT", "PATCH"].includes(entry.method)) overrides.activeSubTab = "body";
@@ -766,7 +777,7 @@ window.App = window.App || {};
     });
 
     el.querySelector(".sb-item-main").addEventListener("mouseenter",
-      () => App.scheduleHoverPreview(el, App.previewHtml(entry.method, url)));
+      () => App.scheduleHoverPreview(el, App.previewHtml(entry.method, url, "", entry.description)));
     el.querySelector(".sb-item-main").addEventListener("mouseleave", App.clearHoverPreview);
 
     if (isUser) {

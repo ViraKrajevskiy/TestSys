@@ -68,11 +68,15 @@
     el.style.top = Math.min(y, maxY) + "px";
   };
 
-  App.previewHtml = function (method, url, statusInfo) {
+  App.previewHtml = function (method, url, statusInfo, description) {
     const colorVar = App.METHOD_COLOR_VAR[method] || "--text-dim";
     let html = '<span class="hp-method" style="color:var(' + colorVar + ');border:1px solid var(' + colorVar + ')">' + method + '</span>';
     html += '<div class="hp-url">' + App.escapeHtml(url) + '</div>';
     if (statusInfo) html += statusInfo;
+    // Описание запроса (Notes) — заметка для команды, если задана.
+    if (description && description.trim()) {
+      html += '<div class="hp-desc">' + App.escapeHtml(description.trim()) + '</div>';
+    }
     return html;
   };
 

@@ -34,6 +34,11 @@ window.App = window.App || {};
       // multipart/form-data (JSON body игнорируется).
       files: [],           // [{field, path, name, size}]
       formFields: [],      // [{key, value, enabled}] — текстовые поля формы
+      // Опции запроса (вкладка «Настройки»)
+      ignoreSsl: false,       // не проверять SSL-сертификат
+      followRedirects: true,  // идти по 3xx
+      timeoutSec: 0,          // 0 = глобальный таймаут из настроек
+      description: "",         // заметка для команды
     };
     Object.assign(tab, overrides || {});
     return tab;
@@ -86,6 +91,46 @@ window.App = window.App || {};
     } else {
       App.renderTabBar();
     }
+  };
+
+  /**
+   * Дублировать вкладку: копируем все поля запроса (без ответа/истории),
+   * вставляем сразу после оригинала и делаем активной.
+   */
+  App.duplicateTab = function (id) {
+    const src = state.tabs.find(t => t.id === id);
+    if (!src) return;
+    if (state.tabs.length >= App.LIMITS.MAX_TABS) {
+      App.showAlert && App.showAlert(`${App.t("maxTabsReached")} ${App.LIMITS.MAX_TABS}`);
+      return;
+    }
+    // Копируем только «запросные» поля, не тащим ответ / историю
+    const clone = App.createTab({
+      method:        src.method,
+      url:           src.url,
+      params:        JSON.parse(JSON.stringify(src.params || [])),
+      headers:       JSON.parse(JSON.stringify(src.headers || [])),
+      body:          src.body || "",
+      userAgent:     src.userAgent || "",
+      preScript:     src.preScript || "",
+      testScript:    src.testScript || "",
+      auth:          src.auth ? JSON.parse(JSON.stringify(src.auth)) : undefined,
+      formFields:    JSON.parse(JSON.stringify(src.formFields || [])),
+      activeSubTab:  src.activeSubTab || "params",
+      // Опции запроса — тоже копируем
+      ignoreSsl:       !!src.ignoreSsl,
+      followRedirects: src.followRedirects !== false,
+      timeoutSec:      src.timeoutSec || 0,
+      description:     src.description || "",
+      // Название с суффиксом — чтобы отличить от оригинала
+      title:         src.title ? src.title + " (copy)" : "",
+      // Привязку к коллекции не копируем — дубль не должен перезаписывать оригинал
+    });
+    const srcIdx = state.tabs.findIndex(t => t.id === id);
+    state.tabs.splice(srcIdx + 1, 0, clone);
+    state.activeTabId = clone.id;
+    App.renderAll();
+    App.saveSession && App.saveSession();
   };
 
   App.closeOtherTabs = function (keepId) {
@@ -161,6 +206,8 @@ window.App = window.App || {};
     "preScript", "testScript", "auth",
     "collectionName", "folderName", "requestName",
     "crudEntity", "crudAction", "formFields",
+    // Опции запроса
+    "ignoreSsl", "followRedirects", "timeoutSec", "description",
   ];
 
   let _saveTimer = null;
@@ -314,6 +361,10 @@ window.App = window.App || {};
     if (tab.preScript && tab.preScript.trim()) entry.preScript = tab.preScript;
     if (tab.testScript && tab.testScript.trim()) entry.testScript = tab.testScript;
     if (tab.auth) entry.auth = JSON.parse(JSON.stringify(tab.auth));
+    if (tab.description && tab.description.trim()) entry.description = tab.description;
+    if (tab.ignoreSsl) entry.ignoreSsl = true;
+    if (tab.followRedirects === false) entry.followRedirects = false;
+    if (tab.timeoutSec && Number(tab.timeoutSec) > 0) entry.timeoutSec = Number(tab.timeoutSec);
 
     target.folder.items = target.folder.items || [];
     target.folder.items.push(entry);
@@ -358,6 +409,15 @@ window.App = window.App || {};
     else delete src.entry.preScript;
     if (tab.testScript && tab.testScript.trim()) src.entry.testScript = tab.testScript;
     else delete src.entry.testScript;
+    // Опции запроса
+    if (tab.description && tab.description.trim()) src.entry.description = tab.description;
+    else delete src.entry.description;
+    if (tab.ignoreSsl) src.entry.ignoreSsl = true;
+    else delete src.entry.ignoreSsl;
+    if (tab.followRedirects === false) src.entry.followRedirects = false;
+    else delete src.entry.followRedirects;
+    if (tab.timeoutSec && Number(tab.timeoutSec) > 0) src.entry.timeoutSec = Number(tab.timeoutSec);
+    else delete src.entry.timeoutSec;
     // Авторизацию запроса тоже запоминаем — иначе при повторном открытии
     // вкладка опять свалится в наследование.
     if (tab.auth) src.entry.auth = JSON.parse(JSON.stringify(tab.auth));

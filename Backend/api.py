@@ -652,16 +652,20 @@ class Api:
             return {"ok": False, "error": str(e)}
 
     def send_request(self, method, url, headers, params, body,
-                     files=None, form_fields=None, verify_ssl=True, proxy=None):
+                     files=None, form_fields=None, verify_ssl=True, proxy=None,
+                     follow_redirects=True, timeout=None):
         """Отправка HTTP-запроса. Вызывается из app.js.
 
         ``files`` — список ``{field, path, filename?}``. Если непустой,
         запрос уходит как multipart/form-data вместе с ``form_fields``.
         ``verify_ssl`` / ``proxy`` приходят из настроек приложения.
+        ``follow_redirects`` / ``timeout`` — переопределения с вкладки
+        запроса (чекбокс «Следовать редиректам» и поле «Таймаут»).
         """
         return send_http_request(method, url, headers, params, body,
                                  files=files, form_fields=form_fields,
-                                 verify_ssl=verify_ssl, proxy=proxy)
+                                 verify_ssl=verify_ssl, proxy=proxy,
+                                 follow_redirects=follow_redirects, timeout=timeout)
 
     def save_binary_response(self, b64_content, suggested_name="response.bin"):
         """Сохранить бинарный ответ (base64) в файл через нативный диалог."""
@@ -2502,4 +2506,148 @@ class Api:
         except Exception as e:
             import traceback, json as _json
             logger.error(f"run_parallel_test error: {e}\n{traceback.format_exc()}")
+            return _json.dumps({"ok": False, "error": str(e)})
+    # ────────────────────────────────────────────────────────────
+    # Mock Server
+    # ────────────────────────────────────────────────────────────
+
+    def start_mock_server(self, port_str, routes_json):
+        """Запустить mock-сервер на указанном порту с заданными маршрутами."""
+        import json as _json
+        try:
+            import mock_server
+            port = int(port_str)
+            routes = _json.loads(routes_json) if isinstance(routes_json, str) else (routes_json or [])
+            result = mock_server.start_mock(port, routes)
+            return _json.dumps(result, ensure_ascii=False)
+        except Exception as e:
+            import traceback
+            logger.error(f"start_mock_server error: {e}\n{traceback.format_exc()}")
+            return _json.dumps({"ok": False, "error": str(e)})
+
+    def stop_mock_server(self):
+        """Остановить mock-сервер."""
+        import json as _json
+        try:
+            import mock_server
+            result = mock_server.stop_mock()
+            return _json.dumps(result, ensure_ascii=False)
+        except Exception as e:
+            return _json.dumps({"ok": False, "error": str(e)})
+
+    def get_mock_server_status(self):
+        """Вернуть статус mock-сервера и последние 50 записей лога."""
+        import json as _json
+        try:
+            import mock_server
+            result = mock_server.get_mock_status()
+            result["ok"] = True
+            return _json.dumps(result, ensure_ascii=False)
+        except Exception as e:
+            return _json.dumps({"ok": False, "error": str(e), "running": False, "port": 0, "routes": 0, "log": []})
+
+    def save_mock_routes(self, filename, routes_json):
+        """Сохранить маршруты mock-сервера в файл .json."""
+        import json as _json
+        try:
+            routes = _json.loads(routes_json) if isinstance(routes_json, str) else (routes_json or [])
+            out = {"mock_routes": routes}
+            content = _json.dumps(out, ensure_ascii=False, indent=2)
+            result = self.save_text_file(filename, content, ["Mock Routes (*.json)", "All files (*.*)"])
+            return _json.dumps(result, ensure_ascii=False)
+        except Exception as e:
+            return _json.dumps({"ok": False, "error": str(e)})
+
+    def load_mock_routes(self):
+        """Загрузить маршруты из файла. Возвращает {ok, routes}."""
+        import json as _json
+        try:
+            if not webview.windows:
+                return _json.dumps({"ok": False, "error": "Нет окна"})
+            win = webview.windows[0]
+            files = win.create_file_dialog(
+                webview.OPEN_DIALOG,
+                file_types=("Mock Routes (*.json)", "All files (*.*)")
+            )
+            if not files:
+                return _json.dumps({"ok": False, "cancelled": True})
+            path = files[0]
+            with open(path, encoding="utf-8") as f:
+                data = _json.load(f)
+            routes = data.get("mock_routes", data) if isinstance(data, dict) else data
+            if not isinstance(routes, list):
+                return _json.dumps({"ok": False, "error": "Неверный формат файла"})
+            return _json.dumps({"ok": True, "routes": routes}, ensure_ascii=False)
+        except Exception as e:
+            return _json.dumps({"ok": False, "error": str(e)})
+
+    # ────────────────────────────────────────────────────────────
+    # Дополнения (addons), подгружаемые из репозитория по требованию
+    # ────────────────────────────────────────────────────────────
+    _ADDON_RAW_BASE = ("https://raw.githubusercontent.com/"
+                       "ViraKrajevskiy/TestSys/master/Backend/Ui/js/addons/")
+
+    def download_addon(self, name):
+        """Скачать файл-дополнение из репозитория и вернуть его содержимое.
+
+        Скачанное кэшируется в пользовательской папке (``testsys_addons``),
+        поэтому после первого успешного запуска дополнение работает и без
+        интернета. Разрешены только простые имена файлов — выйти за пределы
+        папки нельзя, и грузим строго из зашитого репозитория.
+        """
+        import json as _json
+        try:
+            if not re.match(r'^[A-Za-z0-9_.-]+$', name or ''):
+                return _json.dumps({"ok": False, "error": "Недопустимое имя дополнения"})
+
+            addons_dir = os.path.join(USER_DATA_DIR, "testsys_addons")
+            try:
+                os.makedirs(addons_dir, exist_ok=True)
+            except Exception:
+                pass
+            cache_path = os.path.join(addons_dir, name)
+            url = self._ADDON_RAW_BASE + name
+
+            # 1. Пытаемся скачать свежую версию из репозитория.
+            net_err = ""
+            try:
+                r = requests.get(url, timeout=20)
+                if r.status_code == 200 and (r.text or "").strip():
+                    try:
+                        with open(cache_path, "w", encoding="utf-8") as f:
+                            f.write(r.text)
+                    except Exception:
+                        pass
+                    return _json.dumps({"ok": True, "content": r.text, "cached": False},
+                                       ensure_ascii=False)
+                net_err = f"GitHub вернул HTTP {r.status_code}"
+            except Exception as e:
+                net_err = str(e)
+
+            # 2. Сеть недоступна — берём ранее скачанную копию из кэша.
+            if os.path.isfile(cache_path):
+                with open(cache_path, encoding="utf-8") as f:
+                    return _json.dumps({"ok": True, "content": f.read(),
+                                        "cached": True, "offline": True}, ensure_ascii=False)
+
+            return _json.dumps({"ok": False, "error": net_err or "Не удалось скачать"})
+        except Exception as e:
+            logger.error(f"download_addon failed: {e}")
+            import json as _json
+            return _json.dumps({"ok": False, "error": str(e)})
+
+    def get_cached_addon(self, name):
+        """Вернуть уже скачанное дополнение из кэша, не обращаясь к сети."""
+        import json as _json
+        try:
+            if not re.match(r'^[A-Za-z0-9_.-]+$', name or ''):
+                return _json.dumps({"ok": False, "error": "bad name"})
+            cache_path = os.path.join(USER_DATA_DIR, "testsys_addons", name)
+            if os.path.isfile(cache_path):
+                with open(cache_path, encoding="utf-8") as f:
+                    return _json.dumps({"ok": True, "content": f.read(), "cached": True},
+                                       ensure_ascii=False)
+            return _json.dumps({"ok": False, "error": "not cached"})
+        except Exception as e:
+            import json as _json
             return _json.dumps({"ok": False, "error": str(e)})

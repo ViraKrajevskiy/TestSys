@@ -56,6 +56,7 @@
     <button id="load-test-btn" class="nav-bar-btn" title="Нагрузочное тестирование" data-i18n-title="loadTest"><i class="bi bi-lightning-charge"></i></button>
     <button id="par-test-btn" class="nav-bar-btn" title="Параллельные тесты" data-i18n-title="parallelTests"><i class="bi bi-diagram-3"></i></button>
     <button id="metrics-btn" class="nav-bar-btn" data-i18n-title="navMetrics" title="Метрики запросов"><i class="bi bi-graph-up"></i></button>
+    <button id="global-history-btn" class="nav-bar-btn" title="Глобальная история запросов" onclick="App.showGlobalHistory && App.showGlobalHistory()"><i class="bi bi-clock-history"></i></button>
 
     <!-- ── Разделитель ── -->
     <div class="navbar-sep"></div>
@@ -69,12 +70,17 @@
       <div id="nav-more-hidden" style="display:none;">
         <button id="users-btn" data-i18n-title="navUsers" title="Управление пользователями" onclick="App.openUsersTab()"><i class="bi bi-people"></i> Пользователи</button>
         <button id="cookie-manager-btn" title="Cookie Manager" onclick="App.showCookieManager()"><i class="bi bi-cookie"></i> Cookie Manager</button>
+        <button id="mock-server-btn" title="Mock Server" onclick="App.showMockServer && App.showMockServer()"><i class="bi bi-hdd-rack"></i> Mock Server</button>
+        <button id="tutorial-btn" title="Интерактивное обучение" onclick="App.startTutorial && App.startTutorial()"><i class="bi bi-mortarboard"></i> Интерактивное обучение</button>
         <button id="sync-btn" data-i18n-title="navSync" title="Совместная работа"><i class="bi bi-hdd"></i> Совместная работа</button>
         <button id="terminal-btn" data-i18n-title="terminal" title="Терминал (Ctrl+`)"><i class="bi bi-terminal"></i> Терминал</button>
         <button id="theme-settings-btn" data-i18n-title="navTheme" title="Настроить тему"><i class="bi bi-palette"></i> Тема</button>
       </div>
     </div>
 
+    <button id="help-btn" class="nav-bar-btn" title="Справка (F1)" onclick="App.showHelp && App.showHelp()">
+      <i class="bi bi-question-circle"></i>
+    </button>
     <button id="settings-btn" class="nav-bar-btn" data-i18n-title="navSettings" title="Настройки проекта">
       <i class="bi bi-gear"></i>
     </button>
@@ -118,6 +124,9 @@
 <ul id="tab-context-menu" class="dropdown-menu">
   <li><button class="dropdown-item" data-action="rename" data-i18n="renameTab">
     <i class="bi bi-pencil me-1"></i> Переименовать
+  </button></li>
+  <li><button class="dropdown-item" data-action="duplicate">
+    <i class="bi bi-copy me-1"></i> Дублировать
   </button></li>
   <li><button class="dropdown-item" data-action="copy-curl">
     <i class="bi bi-terminal me-1"></i> <span data-i18n="copyAsCurl">Скопировать как cURL</span>
@@ -225,6 +234,11 @@
 <script src="js/features/environments.js"></script>
 <script src="js/features/responseHistory.js"></script>
 <script src="js/features/responseHistoryUI.js"></script>
+<script src="js/features/postmanImport.js"></script>
+<script src="js/features/mockServerUI.js"></script>
+<script src="js/features/globalHistory.js"></script>
+<script src="js/features/helpModal.js"></script>
+<script src="js/features/tutorialLoader.js"></script>
 <script src="js/features/websocket.js"></script>
 <script src="js/features/metrics.js"></script>
 <script src="js/features/urlAutocomplete.js"></script>

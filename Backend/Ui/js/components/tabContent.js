@@ -51,6 +51,9 @@ window.App = window.App || {};
         <li class="nav-item"><button class="nav-link ${sub("tests")}" data-sub="tests">
           ${App.t("tests")}${_testsBadge(tab)}
         </button></li>
+        <li class="nav-item"><button class="nav-link ${sub("options")}" data-sub="options">
+          Настройки${_optionsBadge(tab)}
+        </button></li>
       </ul>
       <div class="ua-row mb-2" style="display:flex;gap:6px;align-items:center;">
         <label style="font-size:11px;color:var(--text-dim);white-space:nowrap;flex-shrink:0;">User-Agent:</label>
@@ -69,6 +72,9 @@ window.App = window.App || {};
             <div class="response-actions">
               <button class="response-action-btn" id="response-copy-btn" title="${App.t("copyResponse")}">
                 <i class="bi bi-clipboard"></i>
+              </button>
+              <button class="response-action-btn" id="response-download-btn" title="Скачать ответ как файл">
+                <i class="bi bi-download"></i>
               </button>
               <button class="response-action-btn" id="response-collapse-btn"
                       title="${tab.responseCollapsed ? App.t("expandResponse") : App.t("collapseResponse")}">
@@ -184,6 +190,9 @@ window.App = window.App || {};
       setTimeout(() => { btn.innerHTML = old; btn.style.color = ""; }, 1200);
     });
 
+    document.getElementById("response-download-btn")?.addEventListener("click", () =>
+      App.downloadResponse(tab));
+
     App.renderSubTabContent(tab);
     App.renderResponse(tab);
 
@@ -276,6 +285,11 @@ window.App = window.App || {};
 
     if (tab.activeSubTab === "files") {
       _renderFilesTab(container, tab);
+      return;
+    }
+
+    if (tab.activeSubTab === "options") {
+      _renderOptionsTab(container, tab);
       return;
     }
 
@@ -750,6 +764,17 @@ window.App = window.App || {};
     if (!box) return;
     box.style.display = "";
 
+    // Запрос не выполнился (нет соединения/таймаут) — тесты не гоняли.
+    // Показываем это явно, а не как «упавшие» проверки против undefined.
+    if (res.skipped) {
+      box.innerHTML =
+        `<div class="script-skip"><i class="bi bi-slash-circle me-1"></i>` +
+        `Тесты пропущены — запрос не выполнен` +
+        (res.reason ? `<div class="script-err-msg">${App.escapeHtml(res.reason)}</div>` : "") +
+        `</div>`;
+      return;
+    }
+
     let html = "";
     if (!res.ok && res.error) {
       html += `<div class="script-err"><i class="bi bi-x-circle"></i> ${App.escapeHtml(res.error)}</div>`;
@@ -781,6 +806,95 @@ window.App = window.App || {};
     const fail = t.length - pass;
     if (fail === 0) return ` <span class="sub-badge sub-ok">${pass}</span>`;
     return ` <span class="sub-badge sub-fail">${pass}/${t.length}</span>`;
+  }
+
+  /** Точка-индикатор на вкладке «Настройки» — если что-то отличается от дефолта. */
+  function _optionsBadge(tab) {
+    const changed = tab.ignoreSsl
+      || tab.followRedirects === false
+      || (tab.timeoutSec && Number(tab.timeoutSec) > 0)
+      || (tab.description && tab.description.trim());
+    return changed ? ' <span class="sub-dot">●</span>' : "";
+  }
+
+  /**
+   * Вкладка «Настройки» запроса: SSL, редиректы, таймаут, описание.
+   * Всё — переопределения на уровне запроса. Пустой таймаут = глобальный.
+   */
+  function _renderOptionsTab(container, tab) {
+    const followChecked = tab.followRedirects !== false;   // по умолчанию включено
+    container.innerHTML =
+      '<div class="req-options">' +
+
+        '<label class="req-opt-row">' +
+          '<input type="checkbox" class="form-check-input" id="opt-ignore-ssl" ' +
+            (tab.ignoreSsl ? "checked" : "") + '>' +
+          '<span class="req-opt-label">Игнорировать проверку SSL-сертификата' +
+            '<span class="req-opt-hint">Для локальных серверов с самоподписанным сертификатом. ' +
+            'Отправляет запрос с <code>verify=false</code>.</span></span>' +
+        '</label>' +
+
+        '<label class="req-opt-row">' +
+          '<input type="checkbox" class="form-check-input" id="opt-follow-redirects" ' +
+            (followChecked ? "checked" : "") + '>' +
+          '<span class="req-opt-label">Следовать редиректам (3xx)' +
+            '<span class="req-opt-hint">Выключите, чтобы поймать сам ответ 301/302/307 ' +
+            'вместо конечной страницы.</span></span>' +
+        '</label>' +
+
+        '<div class="req-opt-row">' +
+          '<div class="req-opt-label" style="min-width:0;">Таймаут запроса, сек' +
+            '<span class="req-opt-hint">Пусто — использовать глобальный из настроек. ' +
+            'Переопределяет его только для этого запроса.</span></div>' +
+          '<input type="number" min="1" max="3600" class="form-control form-control-sm req-opt-num" ' +
+            'id="opt-timeout" placeholder="глоб." value="' +
+            (tab.timeoutSec && Number(tab.timeoutSec) > 0 ? Number(tab.timeoutSec) : "") + '">' +
+        '</div>' +
+
+        '<div class="req-opt-desc-wrap">' +
+          '<label class="req-opt-label" for="opt-description" style="display:block;margin-bottom:4px;">' +
+            'Описание запроса' +
+            '<span class="req-opt-hint">Заметка для команды — видна в подсказке при наведении ' +
+            'на запрос в коллекции.</span></label>' +
+          '<textarea class="form-control req-opt-desc" id="opt-description" rows="4" ' +
+            'placeholder="Что делает этот запрос, какие данные ожидает…">' +
+            App.escapeHtml(tab.description || "") + '</textarea>' +
+        '</div>' +
+
+      '</div>';
+
+    const rerenderNav = () => {
+      // Обновляем точку-бейдж на вкладке, не перерисовывая всё содержимое
+      const btn = container.closest("#tab-content")?.querySelector('[data-sub="options"]');
+      if (btn) {
+        const dot = btn.querySelector(".sub-dot");
+        const need = _optionsBadge(tab).includes("sub-dot");
+        if (need && !dot) btn.insertAdjacentHTML("beforeend", ' <span class="sub-dot">●</span>');
+        else if (!need && dot) dot.remove();
+      }
+    };
+
+    container.querySelector("#opt-ignore-ssl").addEventListener("change", (e) => {
+      tab.ignoreSsl = e.target.checked;
+      App.saveSession && App.saveSession();
+      rerenderNav();
+    });
+    container.querySelector("#opt-follow-redirects").addEventListener("change", (e) => {
+      tab.followRedirects = e.target.checked;
+      App.saveSession && App.saveSession();
+      rerenderNav();
+    });
+    container.querySelector("#opt-timeout").addEventListener("input", (e) => {
+      const v = parseInt(e.target.value, 10);
+      tab.timeoutSec = (v && v > 0) ? Math.min(v, 3600) : 0;
+      App.saveSession && App.saveSession();
+      rerenderNav();
+    });
+    container.querySelector("#opt-description").addEventListener("input", (e) => {
+      tab.description = e.target.value;
+      App.saveSession && App.saveSession();
+      rerenderNav();
+    });
   }
 
   /**
@@ -1356,7 +1470,7 @@ window.App = window.App || {};
     return (n / (1024 * 1024)).toFixed(1) + " МБ";
   }
 
-  function _suggestedName(tab) {
+  function _suggestedName(tab, forText) {
     let name = "";
     try {
       const u = new URL(tab.lastSent ? tab.lastSent.url : tab.url);
@@ -1364,6 +1478,15 @@ window.App = window.App || {};
     } catch { /* пусто */ }
     if (name && /\.[a-z0-9]{2,5}$/i.test(name)) return name;
     const ct = (tab.response.content_type || "").split(";")[0].trim();
+    // Для текстовых ответов подбираем текстовое расширение (json/xml/txt).
+    if (forText) {
+      const textExt = /json/.test(ct) ? "json"
+                    : /xml/.test(ct)  ? "xml"
+                    : /html/.test(ct) ? "html"
+                    : /csv/.test(ct)  ? "csv"
+                    : "txt";
+      return (name || "response") + "." + textExt;
+    }
     const ext = ({
       "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif",
       "image/webp": "webp", "image/svg+xml": "svg",
@@ -1372,6 +1495,50 @@ window.App = window.App || {};
     })[ct] || "bin";
     return (name || "response") + "." + ext;
   }
+
+  /**
+   * Скачать тело ответа как файл. Бинарный ответ (картинка, PDF, архив)
+   * сохраняется из base64 через save_binary_response; текстовый — через
+   * save_text_file. Работает и для заголовков, но по кнопке всегда идёт тело.
+   */
+  App.downloadResponse = async function (tab) {
+    if (!tab || !tab.response || !tab.response.ok) {
+      App.showAlert && App.showAlert("Нет ответа для сохранения");
+      return;
+    }
+    const api = window.pywebview && window.pywebview.api;
+    const r = tab.response;
+
+    // Бинарный ответ — сохраняем из base64 «как есть».
+    if (r.is_binary && r.base64) {
+      if (!api || !api.save_binary_response) { App.showAlert && App.showAlert("Сохранение недоступно"); return; }
+      const res = await api.save_binary_response(r.base64, _suggestedName(tab, false));
+      if (res && res.ok) App.showAlert && App.showAlert("✓ Сохранено: " + res.path);
+      else if (res && !res.cancelled) App.showAlert && App.showAlert("Ошибка: " + (res.error || ""));
+      return;
+    }
+
+    // Текстовый ответ — сохраняем тело (форматированный JSON, если это JSON).
+    const text = App.formatJson ? App.formatJson(r.text || "") : (r.text || "");
+    if (!text) { App.showAlert && App.showAlert("Пустое тело ответа"); return; }
+    if (api && api.save_text_file) {
+      const ct = (r.content_type || "").split(";")[0].trim();
+      const types = /json/.test(ct) ? ["JSON (*.json)", "All files (*.*)"]
+                  : /xml/.test(ct)  ? ["XML (*.xml)", "All files (*.*)"]
+                  : ["Text (*.txt)", "All files (*.*)"];
+      const res = await api.save_text_file(_suggestedName(tab, true), text, types);
+      if (res && res.ok) App.showAlert && App.showAlert("✓ Сохранено: " + res.path);
+      else if (res && !res.cancelled) App.showAlert && App.showAlert("Ошибка: " + (res.error || ""));
+    } else {
+      // Веб-фоллбэк
+      const blob = new Blob([text], { type: "text/plain" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = _suggestedName(tab, true);
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+  };
 
   /** Рендер бинарного ответа: превью картинки + кнопка «Скачать». */
   function _renderBinaryResponse(tab) {

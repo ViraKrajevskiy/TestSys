@@ -177,6 +177,8 @@ def send_http_request(
     form_fields: Optional[List[Dict[str, str]]] = None,
     verify_ssl: bool = True,
     proxy: Optional[str] = None,
+    follow_redirects: bool = True,
+    timeout: Optional[int] = None,
 ) -> dict:
     """Выполняет один HTTP-запрос, возвращает dict, готовый к JSON-сериализации.
 
@@ -184,7 +186,21 @@ def send_http_request(
     JSON-тело игнорируется, вместо него собираются поля из ``form_fields``
     и файлы читаются с диска. Заголовок Content-Type снимаем, чтобы requests
     сам поставил multipart с корректным boundary.
+
+    ``follow_redirects`` — переопределяет поведение редиректов на уровне
+    запроса (по умолчанию идём по 3xx). ``timeout`` — переопределяет
+    глобальный таймаут; None или 0 = взять глобальный REQUEST_TIMEOUT.
     """
+    # Эффективный таймаут: переопределение с вкладки > глобальная настройка.
+    eff_timeout = REQUEST_TIMEOUT
+    if timeout is not None:
+        try:
+            t = int(timeout)
+            if t > 0:
+                eff_timeout = max(1, min(t, 3600))
+        except (TypeError, ValueError):
+            pass
+
     opened = []  # держим открытые файлы, чтобы закрыть их после отправки
     try:
         clean_headers = {k: v for k, v in (headers or {}).items() if k}
@@ -228,9 +244,9 @@ def send_http_request(
             headers=clean_headers,
             data=data_payload,
             files=multipart_files,
-            timeout=REQUEST_TIMEOUT,
+            timeout=eff_timeout,
             stream=True,   # чтобы контролировать размер ответа
-            allow_redirects=True,
+            allow_redirects=follow_redirects,
             verify=verify_ssl,
             proxies=proxies,
         )
@@ -294,8 +310,8 @@ def send_http_request(
 
     except requests.exceptions.Timeout:
         host = _host(url)
-        return _err(f"Таймаут: сервер {host} не ответил за {REQUEST_TIMEOUT} сек",
-                    hint="Сервер запущен, но не отвечает. Проверьте его логи или увеличьте таймаут в настройках.")
+        return _err(f"Таймаут: сервер {host} не ответил за {eff_timeout} сек",
+                    hint="Сервер запущен, но не отвечает. Проверьте его логи или увеличьте таймаут (в настройках или на вкладке запроса).")
 
     except requests.exceptions.SSLError as e:
         return _err(f"Ошибка SSL: {_short(str(e))}",

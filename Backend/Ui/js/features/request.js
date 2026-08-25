@@ -148,17 +148,24 @@ App.sendRequest = async function (tabId, opts) {
     // сборками бэка без multipart. Extra args добавляем только если реально
     // отправляем файлы.
     // SSL-проверка и прокси — из настроек. verify_ssl по умолчанию true.
-    const verifySsl = App.getSetting ? App.getSetting("verifySsl") !== false : true;
+    const globalVerify = App.getSetting ? App.getSetting("verifySsl") !== false : true;
+    // Чекбокс «Игнорировать SSL» на вкладке жёстко отключает проверку для
+    // этого запроса — перебивает глобальную настройку.
+    const verifySsl = tab.ignoreSsl ? false : globalVerify;
     const proxy = (App.getSetting && App.getSetting("proxyUrl")) || null;
+    // По умолчанию идём по 3xx-редиректам; чекбокс на вкладке может выключить.
+    const followRedirects = tab.followRedirects !== false;
+    // Таймаут с вкладки переопределяет глобальный; пустой/0 = глобальный.
+    const timeout = (tab.timeoutSec && Number(tab.timeoutSec) > 0) ? Number(tab.timeoutSec) : null;
 
     tab.response = hasFiles
       ? await window.pywebview.api.send_request(
           tab.method, finalUrl, headersObj, paramsObj, null,
-          filesArr, formFieldsArr, verifySsl, proxy,
+          filesArr, formFieldsArr, verifySsl, proxy, followRedirects, timeout,
         )
       : await window.pywebview.api.send_request(
           tab.method, finalUrl, headersObj, paramsObj, finalBody.trim() || null,
-          null, null, verifySsl, proxy,
+          null, null, verifySsl, proxy, followRedirects, timeout,
         );
     if (tab.response.ok && App.getResponseEntities(tab) && tab.crudEntity) {
       tab.responseViewMode = "table";
@@ -214,11 +221,24 @@ App.sendRequest = async function (tabId, opts) {
     method: tab.method, url: finalUrl,
   });
 
-  // Test-скрипт после ответа — assertions идут в tab.lastTests
-  if (tab.testScript && tab.response && App.runScript) {
+  // Test-скрипт запускаем ТОЛЬКО когда реально пришёл HTTP-ответ.
+  // При обрыве соединения / таймауте (response.ok === false) ответа нет,
+  // pm.response.status был бы undefined — и тесты падали бы с бессмысленным
+  // «ожидался 200, получен undefined», пряча настоящую причину (сервер
+  // недоступен). Ответ 4xx/5xx — это тоже ответ (ok === true), тесты для него
+  // прогоняем как обычно: их часто и пишут под проверку 404/401 и т.п.
+  if (tab.testScript && tab.response && tab.response.ok && App.runScript) {
     tab.lastTests = App.runScript(tab.testScript, {
       source: "test", tab, response: tab.response,
     });
+  } else if (tab.testScript && tab.response && !tab.response.ok) {
+    // Запрос не выполнился — помечаем тесты как пропущенные, чтобы UI показал
+    // это явно, а не «0 прошло, N упало» против несуществующего ответа.
+    tab.lastTests = {
+      skipped: true,
+      reason: (tab.response.error || "Запрос не выполнен").split("\n")[0],
+      tests: [],
+    };
   } else {
     tab.lastTests = null;
   }

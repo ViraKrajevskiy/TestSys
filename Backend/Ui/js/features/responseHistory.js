@@ -167,8 +167,12 @@ window.App = window.App || {};
           Object.entries(resp.headers).forEach(([k, v]) => respHeaders.push({ name: k, value: String(v) }));
         }
 
-        const bodySize = resp.body ? new Blob([resp.body]).size : -1;
-        const timeMs = typeof resp.elapsed === "number" ? resp.elapsed : -1;
+        const bodySize = resp.text ? new Blob([resp.text]).size : -1;
+        const timing  = resp.timing || {};
+        const timeMs  = typeof resp.elapsed_ms === "number" ? resp.elapsed_ms
+                      : (typeof timing.total === "number" ? timing.total : -1);
+        const ttfbMs  = typeof timing.ttfb     === "number" ? timing.ttfb     : (timeMs >= 0 ? timeMs : 0);
+        const dlMs    = typeof timing.download === "number" ? timing.download : 0;
 
         entries.push({
           startedDateTime: new Date(h.ts).toISOString(),
@@ -185,22 +189,22 @@ window.App = window.App || {};
             ...(t.body ? { postData: { mimeType: "application/json", text: t.body } } : {}),
           },
           response: {
-            status: resp.status || 0,
-            statusText: String(resp.status || ""),
+            status: resp.status_code || 0,
+            statusText: String(resp.status_code || ""),
             httpVersion: "HTTP/1.1",
             headers: respHeaders,
             cookies: [],
             content: {
               size: bodySize,
               mimeType: (respHeaders.find(h => h.name.toLowerCase() === "content-type") || {}).value || "application/json",
-              text: resp.body || "",
+              text: resp.text || "",
             },
             redirectURL: "",
             headersSize: -1,
             bodySize,
           },
           cache: {},
-          timings: { send: 0, wait: timeMs >= 0 ? timeMs : 0, receive: 0 },
+          timings: { send: 0, wait: ttfbMs, receive: dlMs },
         });
       });
     });

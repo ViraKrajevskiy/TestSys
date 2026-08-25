@@ -49,6 +49,7 @@
       else if (action === "close-all") App.closeAllTabs();
       else if (action === "detach") App.detachTab(id);
       else if (action === "rename") App.startRenamingTab(id);
+      else if (action === "duplicate") App.duplicateTab && App.duplicateTab(id);
       else if (action === "copy-curl") App.copyActiveTabAsCurl && App.copyActiveTabAsCurl();
     });
 
